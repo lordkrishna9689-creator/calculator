@@ -1,50 +1,49 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ERP Leaf Spring Production Calculator</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <style>
-        .table-container::-webkit-scrollbar {
-            height: 8px;
-        }
-        .table-container::-webkit-scrollbar-thumb {
-            background-color: #cbd5e1;
-            border-radius: 4px;
-        }
-        .p-3{
-            font-size: 20px !important;
-        }
-    </style>
-</head>
-<body class="bg-slate-50 text-slate-800 font-sans min-h-screen p-4 md:p-6">
 
-    <div class="max-w-7xl mx-auto space-y-6">
-        
-        <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+<!DOCTYPE html><html lang="en"><head>    <meta charset="UTF-8">    <meta name="viewport" content="width=device-width, initial-scale=1.0">    <title>ERP Leaf Spring Production Calculator</title>    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>    <style>        .table-container::-webkit-scrollbar {            height: 8px;        }        .table-container::-webkit-scrollbar-thumb {            background-color: #cbd5e1;            border-radius: 4px;        }        .p-3{            font-size: 20px !important;        }    </style></head><body class="bg-slate-50 text-slate-800 font-sans min-h-screen p-4 md:p-6">
+    <div class="max-w-7xl mx-auto space-y-6">        
+        <!-- Input & Template Upload Sections -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left Side: Paste ERP Box -->
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
                 <div>
-                    <h2 class="text-lg font-bold text-slate-900">1. Paste ERP Raw Dimensions</h2>
-                    <p class="text-xs text-slate-500 mt-0.5">Type or paste data and press <strong>Enter</strong> to instantly add it as a new leaf row.</p>
-                </div>
-                <div class="flex gap-2">
-                    <button onclick="processERPData()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-xs cursor-pointer">
-                        ⚡ Parse & Process Dimensions
-                    </button>
-                    <button onclick="clearAllRows()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-3 py-2 rounded-lg transition text-xs cursor-pointer">
-                        🧹 Clear Table
-                    </button>
+                    <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-900">1. Paste ERP Raw Dimensions</h2>
+                            <p class="text-xs text-slate-500 mt-0.5">Type or paste data and press <strong>Enter</strong> to instantly add it as a new leaf row.</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="processERPData()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-xs cursor-pointer">
+                                ⚡ Parse & Process Dimensions
+                            </button>
+                            <button onclick="clearAllRows()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-3 py-2 rounded-lg transition text-xs cursor-pointer">
+                                🧹 Clear Table
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="erpInput" rows="4" onkeydown="handleKeyPress(event)" class="w-full p-3 font-mono text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder-slate-400" placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
                 </div>
             </div>
-            
-            <textarea id="erpInput" rows="5" onkeydown="handleKeyPress(event)" class="w-full p-3 font-mono text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder-slate-400" 
-placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
+
+            <!-- Right Side: Excel Template Uploader -->
+            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 flex flex-col justify-between">
+                <div>
+                    <div class="border-b border-slate-100 pb-3 mb-4">
+                        <h2 class="text-lg font-bold text-slate-900">2. Import Excel Template</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Upload a workbook containing Width, Dia/Thick, and Length parameters.</p>
+                    </div>
+                    <div class="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 hover:bg-slate-100 transition relative group cursor-pointer">
+                        <input type="file" id="excelTemplateInput" accept=".xlsx, .xls" onchange="importExcelTemplate(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                        <span class="text-2xl mb-1">📁</span>
+                        <span class="text-xs font-medium text-slate-700 group-hover:text-blue-600">Click to upload spreadsheet template</span>
+                        <span class="text-[10px] text-slate-400 mt-0.5">Supports .xlsx and .xls formats</span>
+                    </div>
+                </div>
+                <div id="uploadStatus" class="text-[11px] text-emerald-600 font-medium mt-3 hidden"></div>
+            </div>
         </div>
         
-        <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-            
+        <!-- Calculations Table Component -->
+        <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">            
             <div class="bg-slate-900 text-white p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 class="text-xl font-bold tracking-tight">Leaf Spring Coating Calculation Sheet</h1>
@@ -90,6 +89,7 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
             </div>
         </div>
 
+        <!-- Global Summary Metrics -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-6 rounded-xl shadow-md border border-indigo-950">
                 <h3 class="text-xs font-semibold tracking-wider text-indigo-300 uppercase">Semi Glossy Requirements</h3>
@@ -109,47 +109,44 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
                 <p class="text-xs text-emerald-200/60 mt-2 font-mono">Formula: = 14 * 7 * SUM(5% Increase) / (54 * 1000)</p>
             </div>
         </div>
-
     </div>
 
     <script>
         const STRUCTURAL_FACTOR = 0.00000785; 
         const COATING_FACTOR = 0.00571434;
 
-        // Auto-run with some default examples so page isn't blank at first
         document.addEventListener("DOMContentLoaded", () => {
             const initialDemoText = "70 X 11 X 980 MM\n70 X 11 X 980 MM\n70 X 11 X 777 MM\n70 X 11 X 674 MM";
             document.getElementById("erpInput").value = initialDemoText;
             processERPData();
         });
 
-        // FIXED LOGIC: Single Enter instantly processes current text data
         function handleKeyPress(event) {
             if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault(); // Stop native newline creation
+                event.preventDefault(); 
                 processERPData();
             }
         }
 
         function clearAllRows() {
             document.getElementById("tableBody").innerHTML = "";
+            document.getElementById("uploadStatus").classList.add("hidden");
+            document.getElementById("excelTemplateInput").value = "";
             runCalculations();
         }
 
         function processERPData() {
             const inputField = document.getElementById("erpInput");
             const rawText = inputField.value;
-            if (!rawText.trim()) return; // Don't run on pure white spaces
+            if (!rawText.trim()) return; 
 
             const lines = rawText.split('\n');
             const tbody = document.getElementById("tableBody");
-            
-            // Calculate what our starting leaf index number should be
             let leafCounter = tbody.children.length + 1;
 
             lines.forEach(line => {
                 let cleanLine = line.trim();
-                if (!cleanLine) return; // Skip empty rows
+                if (!cleanLine) return; 
 
                 let numbersOnly = cleanLine.toUpperCase().replace("MM", "").trim();
                 let dimensions = numbersOnly.split(/[xX\*]/);
@@ -173,8 +170,65 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
                 leafCounter++;
             });
 
-            // CRITICAL FIX: Empty out input block so it doesn't loop old entries on next click/Enter
             inputField.value = "";
+        }
+
+        function importExcelTemplate(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                if (jsonRows.length < 1) return;
+
+                let headers = jsonRows[0].map(h => String(h).trim().toLowerCase());
+                
+                let widthIdx = headers.findIndex(h => h.includes("width"));
+                let diaIdx = headers.findIndex(h => h.includes("dia") || h.includes("thick") || h.includes("thickness"));
+                let lengthIdx = headers.findIndex(h => h.includes("length"));
+
+                if (widthIdx === -1) widthIdx = 2; 
+                if (diaIdx === -1) diaIdx = 3;
+                if (lengthIdx === -1) lengthIdx = 4;
+
+                const tbody = document.getElementById("tableBody");
+                let leafCounter = tbody.children.length + 1;
+                let parsedCount = 0;
+
+                for (let i = 1; i < jsonRows.length; i++) {
+                    const rowData = jsonRows[i];
+                    if (!rowData || rowData.length === 0) continue;
+
+                    // FIXED: Explicitly skip summary or total rows found inside the templates
+                    const firstCellText = String(rowData[0] || "").toLowerCase().trim();
+                    if (firstCellText.includes("total") || firstCellText.includes("summary")) {
+                        continue;
+                    }
+
+                    let w = parseFloat(rowData[widthIdx]) || 0;
+                    let d = parseFloat(rowData[diaIdx]) || 0;
+                    let l = parseFloat(rowData[lengthIdx]) || 0;
+
+                    if (w === 0 && d === 0 && l === 0) continue;
+
+                    let generatedRawString = `${w} X ${d} X ${l} MM`;
+                    addNewLeafRow(`${leafCounter}${getOrdinalSymbol(leafCounter)}`, generatedRawString, w, d, l);
+                    leafCounter++;
+                    parsedCount++;
+                }
+
+                const statusBox = document.getElementById("uploadStatus");
+                statusBox.innerText = `✅ Loaded ${parsedCount} items successfully from template!`;
+                statusBox.classList.remove("hidden");
+            };
+            reader.readAsArrayBuffer(file);
         }
 
         function addNewLeafRow(label, rawString, widthVal, diaVal, lengthVal) {
@@ -187,7 +241,7 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
                 <td class="p-3 font-sans font-medium text-slate-900 row-label">${label}</td>
                 <td class="p-3">
                     <input type="text" class="w-full px-2 py-1 border border-slate-200 rounded bg-slate-50 text-slate-500 text-[11px]" 
-                        value="${rawString}" readonly id="textStr_${index}">
+                         value="${rawString}" readonly id="textStr_${index}">
                 </td>
                 <td class="p-3">
                     <input type="number" step="any" value="${widthVal}" class="w-full px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none val-w text-slate-800" oninput="handleFieldChange(this)">
@@ -225,11 +279,11 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
             const w = parseFloat(row.querySelector(".val-w").value) || 0;
             const d = parseFloat(row.querySelector(".val-d").value) || 0;
             const l = parseFloat(row.querySelector(".val-l").value) || 0;
-            
+                        
             const rowIndex = Array.from(row.parentNode.children).indexOf(row) + 1;
             const stringBox = document.getElementById(`textStr_${rowIndex}`);
             if(stringBox) stringBox.value = `${w} X ${d} X ${l} MM`;
-            
+                        
             runCalculations();
         }
 
@@ -239,7 +293,6 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
             runCalculations();
         }
 
-        // Helper to fix structural row counters when deleting from intermediate locations
         function realignRowLabels() {
             const rows = document.querySelectorAll("#tableBody tr");
             rows.forEach((row, idx) => {
@@ -252,7 +305,7 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
 
         function runCalculations() {
             const rows = document.querySelectorAll("#tableBody tr");
-            
+                        
             let accumulatedW = 0, accumulatedD = 0, accumulatedL = 0;
             let accumulatedInc = 0, accumulatedPrm = 0, accumulatedThn = 0, accumulatedWgtRaw = 0;
 
@@ -269,8 +322,7 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
                 row.querySelector(".out-increase").innerText = incrementalWeight.toFixed(4);
                 row.querySelector(".out-primer").innerText = primerVolume.toFixed(4);
                 row.querySelector(".out-thinner").innerText = thinnerVolume.toFixed(4);
-                
-                // Track internally for excel export logic 
+                                
                 row.querySelector(".out-weight-raw").value = baseWeight.toFixed(4);
 
                 accumulatedW += w; accumulatedD += d; accumulatedL += l;
@@ -285,9 +337,8 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
             document.getElementById("totalIncrease").innerText = accumulatedInc.toFixed(4);
             document.getElementById("totalPrimer").innerText = accumulatedPrm.toFixed(4);
             document.getElementById("totalThinner").innerText = accumulatedThn.toFixed(4);
-            
-            // Stash raw aggregated weight on the footer element dynamically to easily pull during export
-            document.getElementById("totalWeightHidden", aggregatedWeightStr = accumulatedWgtRaw.toFixed(4));
+                        
+            let aggregatedWeightStr = accumulatedWgtRaw.toFixed(4);
             document.getElementById("calcTable").setAttribute("data-raw-weight-total", aggregatedWeightStr);
 
             const globalSemiGlossyQty = (40 * 7 * accumulatedInc) / (54 * 1000);
@@ -297,9 +348,13 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
             document.getElementById("globalThinnerG").innerText = globalThinnerGQty.toFixed(4);
         }
 
+        UX.exportToExcelFormat = function() { // bound to globally scope safely
+            exportToExcelFormat();
+        }
+
         function exportToExcelFormat() {
             const rows = document.querySelectorAll("#tableBody tr");
-            
+                        
             let dataset = [[
                 "LEAVES", "RAW ERP STRING", "WIDTH", "DIA", "LENGTH", "NORMAL WEIGHT", "5% INCREASE WEIGHT", "40/ PRIMER", "20/ THINNER"
             ]];
@@ -310,7 +365,7 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
                 const w = parseFloat(row.querySelector(".val-w").value) || 0;
                 const d = parseFloat(row.querySelector(".val-d").value) || 0;
                 const l = parseFloat(row.querySelector(".val-l").value) || 0;
-                
+                                
                 const weight = parseFloat(row.querySelector(".out-weight-raw").value) || 0;
                 const increase = parseFloat(row.querySelector(".out-increase").innerText);
                 const primer = parseFloat(row.querySelector(".out-primer").innerText);
@@ -333,10 +388,10 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
             ]);
 
             dataset.push([]);
-            
+                        
             const semiGlossTotal = parseFloat(document.getElementById("globalSemiGlossy").innerText);
             const thinnerGTotal = parseFloat(document.getElementById("globalThinnerG").innerText);
-            
+                        
             dataset.push(["GLOBAL METRICS FORMULA SUMMARY"]);
             dataset.push(["SEMI GLOSSY QTY", semiGlossTotal]);
             dataset.push(["THINNER QTY (G)", thinnerGTotal]);
@@ -347,6 +402,4 @@ placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
 
             XLSX.writeFile(workbook, "ERP_Leaf_Spring_Calculations.xlsx");
         }
-    </script>
-</body>
-</html>
+    </script></body></html>
