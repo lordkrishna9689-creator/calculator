@@ -2,456 +2,627 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ERP Leaf Spring Production Calculator</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <style>
-        .table-container::-webkit-scrollbar {
-            height: 8px;
-        }
-        .table-container::-webkit-scrollbar-thumb {
-            background-color: #cbd5e1;
-            border-radius: 4px;
-        }
-        .p-3{
-            font-size: 20px !important;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ERP Leaf Spring Production Calculator (PDF → Calculations)</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  .table-container::-webkit-scrollbar { height: 8px; }
+  .table-container::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+  .p-3 { font-size: 20px !important; }
+</style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen p-4 md:p-6">
-    <div class="max-w-7xl mx-auto space-y-6">
-        
-        <!-- Input & Template Upload Sections -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- Left Side: Paste ERP Box -->
-            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
-                <div>
-                    <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                        <div>
-                            <h2 class="text-lg font-bold text-slate-900">1. Paste ERP Raw Dimensions</h2>
-                            <p class="text-xs text-slate-500 mt-0.5">Type or paste data and press <strong>Enter</strong> to instantly add it as a new leaf row.</p>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="processERPData()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-xs cursor-pointer">
-                                ⚡ Parse & Process Dimensions
-                            </button>
-                            <button onclick="clearAllRows()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-3 py-2 rounded-lg transition text-xs cursor-pointer">
-                                🧹 Clear Table
-                            </button>
-                        </div>
-                    </div>
-                    <textarea id="erpInput" rows="4" onkeydown="handleKeyPress(event)" class="w-full p-3 font-mono text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder-slate-400" placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
-                </div>
-            </div>
+<div class="max-w-7xl mx-auto space-y-6">
 
-            <!-- Right Side: Excel Template Uploader -->
-            <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 flex flex-col justify-between">
-                <div>
-                    <div class="border-b border-slate-100 pb-3 mb-4">
-                        <h2 class="text-lg font-bold text-slate-900">2. Import Excel Template</h2>
-                        <p class="text-xs text-slate-500 mt-0.5">Upload a workbook containing Width, Dia/Thick, Length, or RAW ERP Strings.</p>
-                    </div>
-                    <div class="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 hover:bg-slate-100 transition relative group cursor-pointer">
-                        <input type="file" id="excelTemplateInput" accept=".xlsx, .xls" onchange="importExcelTemplate(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                        <span class="text-2xl mb-1">📁</span>
-                        <span class="text-xs font-medium text-slate-700 group-hover:text-blue-600">Click to upload spreadsheet template</span>
-                        <span class="text-[10px] text-slate-400 mt-0.5">Supports .xlsx and .xls formats</span>
-                    </div>
-                </div>
-                <div id="uploadStatus" class="text-[11px] text-emerald-600 font-medium mt-3 hidden"></div>
-            </div>
-        </div>
+  <!-- STEP 1: PDF Upload & Extraction -->
+  <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
+    <div class="border-b border-slate-100 pb-3 mb-4">
+      <h2 class="text-lg font-bold text-slate-900">1. Upload Leaf BOM PDF(s)</h2>
+      <p class="text-xs text-slate-500 mt-0.5">Upload one or more Leaf BOM PDFs. Material sections are extracted automatically and added straight into the calculation table below — no manual copy/paste needed.</p>
+    </div>
+    <input type="file" id="pdfFiles" accept="application/pdf" multiple
+           class="w-full text-sm border border-slate-300 rounded-lg p-2.5 mb-3 bg-slate-50" />
+    <div class="flex gap-2">
+      <button id="processBtn" onclick="processPDFs()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-xs cursor-pointer">
+        📄 Extract & Add to Table
+      </button>
+    </div>
+    <div id="pdfStatus" class="text-xs font-medium text-blue-600 mt-3"></div>
 
-        <!-- Calculations Table Component -->
-        <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-            <div class="bg-slate-900 text-white p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                    <h1 class="text-xl font-bold tracking-tight">Leaf Spring Coating Calculation Sheet</h1>
-                    <p class="text-slate-400 text-xs mt-1">Calculations update instantly when editing parameters manually below</p>
-                </div>
-                <div>
-                    <button onclick="exportToExcelFormat()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2 rounded-lg transition text-sm flex items-center gap-1 cursor-pointer w-full sm:w-auto justify-center">
-                        📥 Export to Excel (.xlsx)
-                    </button>
-                </div>
-            </div>
-
-            <div class="table-container overflow-x-auto w-full">
-                <table id="calcTable" class="w-full text-left border-collapse min-w-[900px]">
-                    <thead>
-                        <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 text-xs uppercase tracking-wider font-semibold">
-                            <th class="p-3 w-20">Leaves</th>
-                            <th class="p-3 w-44">Raw String Parsed</th>
-                            <th class="p-3 w-24">Width (mm)</th>
-                            <th class="p-3 w-24">Dia/Thick (mm)</th>
-                            <th class="p-3 w-24">Length (mm)</th>
-                            <th class="p-3 text-amber-700 bg-amber-50/50">5% Increase Weight</th>
-                            <th class="p-3 text-blue-700 bg-blue-50/50">40/ Primer</th>
-                            <th class="p-3 text-blue-800 bg-blue-100/30">20/ Thinner</th>
-                            <th class="p-3 w-12 text-center text-rose-600">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableBody" class="divide-y divide-slate-200 text-xs font-mono">
-                    </tbody>
-                    <tfoot>
-                        <tr class="bg-slate-800 text-white font-semibold text-xs tracking-wide">
-                            <td class="p-4 font-sans text-sm" colspan="2">TOTALS</td>
-                            <td id="totalWidth" class="p-4">0.0</td>
-                            <td id="totalDia" class="p-4">0.0</td>
-                            <td id="totalLength" class="p-4">0.0</td>
-                            <td id="totalIncrease" class="p-4 text-amber-300 font-bold bg-slate-700">0.0000</td>
-                            <td id="totalPrimer" class="p-4 text-blue-300">0.0000</td>
-                            <td id="totalThinner" class="p-4 text-blue-200">0.0000</td>
-                            <td class="p-4"></td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-
-        <!-- Global Summary Metrics -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-6 rounded-xl shadow-md border border-indigo-950">
-                <h3 class="text-xs font-semibold tracking-wider text-indigo-300 uppercase">Semi Glossy Requirements</h3>
-                <div class="mt-4 flex items-baseline gap-2">
-                    <span id="globalSemiGlossy" class="text-4xl font-mono font-bold text-indigo-100">0.0000</span>
-                    <span class="text-indigo-300 text-xs font-medium">QTY Units</span>
-                </div>
-                <p class="text-xs text-indigo-200/60 mt-2 font-mono">Formula: = 40 * 7 * SUM(5% Increase) / (54 * 1000)</p>
-            </div>
-
-            <div class="bg-gradient-to-br from-emerald-900 to-slate-900 text-white p-6 rounded-xl shadow-md border border-emerald-950">
-                <h3 class="text-xs font-semibold tracking-wider text-emerald-300 uppercase">Thinner Quantity (Glossy)</h3>
-                <div class="mt-4 flex items-baseline gap-2">
-                    <span id="globalThinnerG" class="text-4xl font-mono font-bold text-emerald-100">0.0000</span>
-                    <span class="text-emerald-300 text-xs font-medium">QTY Units</span>
-                </div>
-                <p class="text-xs text-emerald-200/60 mt-2 font-mono">Formula: = 14 * 7 * SUM(5% Increase) / (54 * 1000)</p>
-            </div>
-        </div>
+    <div id="pdfPreviewWrap" class="mt-4 hidden">
+      <table id="pdfPreviewTable" class="w-full text-xs border-collapse">
+        <thead>
+          <tr class="bg-slate-100 text-slate-700 uppercase tracking-wider">
+            <th class="p-2 border border-slate-200 text-left">Leaf</th>
+            <th class="p-2 border border-slate-200 text-left">Raw ERP String Extracted</th>
+            <th class="p-2 border border-slate-200 text-left">File Name</th>
+            <th class="p-2 border border-slate-200 text-left">Debug</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
 
-    <script>
-        const STRUCTURAL_FACTOR = 0.00000785; 
-        const COATING_FACTOR = 0.00571434;
+    <div id="debugCard" class="mt-4 hidden">
+      <h3 id="debugTitle" class="text-sm font-bold text-slate-900">Raw Extracted Text</h3>
+      <p class="text-slate-500 text-xs mt-1 mb-2">This is exactly what PDF.js read from the file — useful if a dimension isn't picked up correctly.</p>
+      <textarea id="debugText" class="w-full h-48 font-mono text-xs p-2.5 border border-slate-300 rounded-lg" readonly></textarea>
+    </div>
+  </div>
 
-        document.addEventListener("DOMContentLoaded", () => {
-            const initialDemoText = "70 X 11 X 980 MM\n70 X 11 X 980 MM\n70 X 11 X 777 MM\n70 X 11 X 674 MM";
-            document.getElementById("erpInput").value = initialDemoText;
-            processERPData();
-        });
+  <!-- STEP 2: Manual paste + Excel template import -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 lg:col-span-2 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">2. Or Paste ERP Raw Dimensions</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Type or paste data and press <strong>Enter</strong> to instantly add it as a new leaf row.</p>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="processERPData()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg transition text-xs cursor-pointer">
+              ⚡ Parse & Process Dimensions
+            </button>
+            <button onclick="clearAllRows()" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium px-3 py-2 rounded-lg transition text-xs cursor-pointer">
+              🧹 Clear Table
+            </button>
+          </div>
+        </div>
+        <textarea id="erpInput" rows="4" onkeydown="handleKeyPress(event)" class="w-full p-3 font-mono text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder-slate-400" placeholder="70 X 11 X 980 MM&#10;70 X 11 X 777 MM"></textarea>
+      </div>
+    </div>
 
-        function handleKeyPress(event) {
-            if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault(); 
-                processERPData();
+    <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6 flex flex-col justify-between">
+      <div>
+        <div class="border-b border-slate-100 pb-3 mb-4">
+          <h2 class="text-lg font-bold text-slate-900">3. Import Excel Template</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Upload a workbook containing Width, Dia/Thick, Length, or RAW ERP Strings.</p>
+        </div>
+        <div class="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-lg p-4 bg-slate-50 hover:bg-slate-100 transition relative group cursor-pointer">
+          <input type="file" id="excelTemplateInput" accept=".xlsx, .xls" onchange="importExcelTemplate(event)" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          <span class="text-2xl mb-1">📁</span>
+          <span class="text-xs font-medium text-slate-700 group-hover:text-blue-600">Click to upload spreadsheet template</span>
+          <span class="text-[10px] text-slate-400 mt-0.5">Supports .xlsx and .xls formats</span>
+        </div>
+      </div>
+      <div id="uploadStatus" class="text-[11px] text-emerald-600 font-medium mt-3 hidden"></div>
+    </div>
+  </div>
+
+  <!-- Calculations Table -->
+  <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+    <div class="bg-slate-900 text-white p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="text-xl font-bold tracking-tight">Leaf Spring Coating Calculation Sheet</h1>
+        <p class="text-slate-400 text-xs mt-1">Calculations update instantly when editing parameters manually below</p>
+      </div>
+      <div>
+        <button onclick="exportToExcelFormat()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2 rounded-lg transition text-sm flex items-center gap-1 cursor-pointer w-full sm:w-auto justify-center">
+          📥 Export to Excel (.xlsx)
+        </button>
+      </div>
+    </div>
+
+    <div class="table-container overflow-x-auto w-full">
+      <table id="calcTable" class="w-full text-left border-collapse min-w-[900px]">
+        <thead>
+          <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 text-xs uppercase tracking-wider font-semibold">
+            <th class="p-3 w-20">Leaves</th>
+            <th class="p-3 w-44">Raw String Parsed</th>
+            <th class="p-3 w-24">Width (mm)</th>
+            <th class="p-3 w-24">Dia/Thick (mm)</th>
+            <th class="p-3 w-24">Length (mm)</th>
+            <th class="p-3 text-amber-700 bg-amber-50/50">5% Increase Weight</th>
+            <th class="p-3 text-blue-700 bg-blue-50/50">40/ Primer</th>
+            <th class="p-3 text-blue-800 bg-blue-100/30">20/ Thinner</th>
+            <th class="p-3 w-12 text-center text-rose-600">Action</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody" class="divide-y divide-slate-200 text-xs font-mono"></tbody>
+        <tfoot>
+          <tr class="bg-slate-800 text-white font-semibold text-xs tracking-wide">
+            <td class="p-4 font-sans text-sm" colspan="2">TOTALS</td>
+            <td id="totalWidth" class="p-4">0.0</td>
+            <td id="totalDia" class="p-4">0.0</td>
+            <td id="totalLength" class="p-4">0.0</td>
+            <td id="totalIncrease" class="p-4 text-amber-300 font-bold bg-slate-700">0.0000</td>
+            <td id="totalPrimer" class="p-4 text-blue-300">0.0000</td>
+            <td id="totalThinner" class="p-4 text-blue-200">0.0000</td>
+            <td class="p-4"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- Global Summary Metrics -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-6 rounded-xl shadow-md border border-indigo-950">
+      <h3 class="text-xs font-semibold tracking-wider text-indigo-300 uppercase">Semi Glossy Requirements</h3>
+      <div class="mt-4 flex items-baseline gap-2">
+        <span id="globalSemiGlossy" class="text-4xl font-mono font-bold text-indigo-100">0.0000</span>
+        <span class="text-indigo-300 text-xs font-medium">QTY Units</span>
+      </div>
+      <p class="text-xs text-indigo-200/60 mt-2 font-mono">Formula: = 40 * 7 * SUM(5% Increase) / (54 * 1000)</p>
+    </div>
+
+    <div class="bg-gradient-to-br from-emerald-900 to-slate-900 text-white p-6 rounded-xl shadow-md border border-emerald-950">
+      <h3 class="text-xs font-semibold tracking-wider text-emerald-300 uppercase">Thinner Quantity (Glossy)</h3>
+      <div class="mt-4 flex items-baseline gap-2">
+        <span id="globalThinnerG" class="text-4xl font-mono font-bold text-emerald-100">0.0000</span>
+        <span class="text-emerald-300 text-xs font-medium">QTY Units</span>
+      </div>
+      <p class="text-xs text-emerald-200/60 mt-2 font-mono">Formula: = 14 * 7 * SUM(5% Increase) / (54 * 1000)</p>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   SECTION A — PDF MATERIAL SECTION EXTRACTOR (from PDF_READER_M_SECTIONS.html)
+   ============================================================ */
+
+// Inline worker to bypass file:/// CORS blocks
+const pdfjsWorkerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');`;
+const workerBlob = new Blob([pdfjsWorkerCode], { type: 'application/javascript' });
+pdfjsLib.GlobalWorkerOptions.workerPort = new Worker(URL.createObjectURL(workerBlob));
+
+let extractedLeavesGlobal = [];
+
+function showDebugText(index) {
+  const item = extractedLeavesGlobal[index];
+  if (!item) return;
+  document.getElementById('debugTitle').innerText = `Raw Extracted Text — ${item.fileName}`;
+  document.getElementById('debugText').value = item.rawText;
+  document.getElementById('debugCard').classList.remove('hidden');
+  document.getElementById('debugCard').scrollIntoView({ behavior: 'smooth' });
+}
+
+function getOrdinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function extractLeafOrder(filename, fullText) {
+  const combined = (filename + " " + fullText).toLowerCase();
+  if (combined.includes("main") || /\b1st\b/.test(combined)) return 1;
+  const ordMatch = combined.match(/\b(\d+)(?:st|nd|rd|th)\b/);
+  if (ordMatch) return parseInt(ordMatch[1], 10);
+  const leafMatch = combined.match(/leaf\s*(\d+)/);
+  if (leafMatch) return parseInt(leafMatch[1], 10);
+  return 999;
+}
+
+function extractMaterialSection(fullText) {
+  const text = fullText.replace(/[\u00A0\r\n]+/g, ' ').replace(/\s+/g, ' ');
+  const xSign = `[xX*×✕✖⨯\\u00D7\\u03A7]`;
+  const numPattern = `(?:\\d+(?:\\s*\\.\\s*\\d+)?)`;
+  const pattern3D = new RegExp(
+    `(${numPattern})\\s*${xSign}\\s*(${numPattern})\\s*${xSign}\\s*(${numPattern})(\\s*MM)?`,
+    'gi'
+  );
+
+  const candidates = [];
+  let m;
+  while ((m = pattern3D.exec(text)) !== null) {
+    const width = cleanNumber(m[1]);
+    const thickness = cleanNumber(m[2]);
+    const length = cleanNumber(m[3]);
+    candidates.push({ width, thickness, length, lengthNum: parseFloat(length), hasMM: !!m[4] });
+  }
+
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.lengthNum - a.lengthNum);
+    const best = candidates[0];
+    return formatResult(`${best.width} X ${best.thickness} X ${best.length}`, best.hasMM);
+  }
+
+  const pattern2D = new RegExp(`(${numPattern})\\s*${xSign}\\s*(${numPattern})(\\s*MM)?`, 'i');
+  const match2D = text.match(pattern2D);
+  if (match2D) {
+    return formatResult(`${cleanNumber(match2D[1])} X ${cleanNumber(match2D[2])}`, !!match2D[3]);
+  }
+  return "";
+}
+
+function cleanNumber(str) {
+  return str.replace(/\s*\.\s*/g, '.').replace(/\s+/g, '');
+}
+
+function formatResult(dimStr, hasMM) {
+  let clean = dimStr.replace(/[x*×✕✖⨯\u00D7\u03A7]/g, 'X').replace(/\s+/g, ' ').trim();
+  if (!/MM$/i.test(clean)) clean += " MM";
+  return clean;
+}
+
+async function processPDFs() {
+  const fileInput = document.getElementById('pdfFiles');
+  const statusDiv = document.getElementById('pdfStatus');
+  const processBtn = document.getElementById('processBtn');
+  const previewWrap = document.getElementById('pdfPreviewWrap');
+  const previewBody = document.querySelector('#pdfPreviewTable tbody');
+
+  if (!fileInput.files.length) {
+    alert('Please select at least one PDF file.');
+    return;
+  }
+
+  previewBody.innerHTML = '';
+  previewWrap.classList.add('hidden');
+  processBtn.disabled = true;
+
+  let extractedLeaves = [];
+
+  for (let f = 0; f < fileInput.files.length; f++) {
+    const file = fileInput.files[f];
+    statusDiv.innerText = `Processing file ${f + 1} of ${fileInput.files.length}: ${file.name}...`;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    let fullText = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + ' ';
+    }
+
+    const materialSection = extractMaterialSection(fullText);
+    const leafNum = extractLeafOrder(file.name, fullText);
+
+    extractedLeaves.push({ fileName: file.name, leafNum, materialSection, rawText: fullText });
+  }
+
+  extractedLeaves.sort((a, b) => a.leafNum - b.leafNum);
+  extractedLeavesGlobal = extractedLeaves;
+
+  // Feed straight into the calculator table below
+  extractedLeaves.forEach((item, index) => {
+    const leafLabel = getOrdinal(index + 1);
+    const dims = extractDimensionsFromString(item.materialSection);
+    addNewLeafRow(leafLabel, item.materialSection || `${dims.w} X ${dims.d} X ${dims.l} MM`, dims.w, dims.d, dims.l);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="p-2 border border-slate-200"><strong>${leafLabel}</strong></td>
+      <td class="p-2 border border-slate-200"><code>${item.materialSection || 'N/A'}</code></td>
+      <td class="p-2 border border-slate-200">${item.fileName}</td>
+      <td class="p-2 border border-slate-200"><button type="button" class="px-2 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 rounded" onclick="showDebugText(${index})">View text</button></td>
+    `;
+    previewBody.appendChild(tr);
+  });
+
+  processBtn.disabled = false;
+
+  if (extractedLeaves.length > 0) {
+    statusDiv.innerText = `✅ Extracted and added ${extractedLeaves.length} leaf(s) to the calculation table below.`;
+    previewWrap.classList.remove('hidden');
+  } else {
+    statusDiv.innerText = `No leaves were extracted.`;
+  }
+}
+
+/* ============================================================
+   SECTION B — CALCULATOR (from calculator.html)
+   ============================================================ */
+
+const STRUCTURAL_FACTOR = 0.00000785;
+const COATING_FACTOR = 0.00571434;
+
+function handleKeyPress(event) {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    processERPData();
+  }
+}
+
+function clearAllRows() {
+  document.getElementById("tableBody").innerHTML = "";
+  document.getElementById("uploadStatus").classList.add("hidden");
+  document.getElementById("excelTemplateInput").value = "";
+  document.getElementById("pdfPreviewWrap").classList.add("hidden");
+  document.getElementById("pdfStatus").innerText = "";
+  document.getElementById("pdfFiles").value = "";
+  runCalculations();
+}
+
+function extractDimensionsFromString(str) {
+  if (!str) return { w: 0, d: 0, l: 0 };
+  let numbersOnly = String(str).toUpperCase().replace("MM", "").trim();
+  let dimensions = numbersOnly.split(/[xX\*]/);
+  let w = 0, d = 0, l = 0;
+
+  if (dimensions.length >= 3) {
+    w = parseFloat(dimensions[0].trim()) || 0;
+    d = parseFloat(dimensions[1].trim()) || 0;
+    l = parseFloat(dimensions[2].trim()) || 0;
+  } else {
+    let matches = numbersOnly.match(/[-+]?[0-9]*\.?[0-9]+/g);
+    if (matches && matches.length >= 3) {
+      w = parseFloat(matches[0]) || 0;
+      d = parseFloat(matches[1]) || 0;
+      l = parseFloat(matches[2]) || 0;
+    }
+  }
+  return { w, d, l };
+}
+
+function processERPData() {
+  const inputField = document.getElementById("erpInput");
+  const rawText = inputField.value;
+  if (!rawText.trim()) return;
+
+  const lines = rawText.split('\n');
+  const tbody = document.getElementById("tableBody");
+  let leafCounter = tbody.children.length + 1;
+
+  lines.forEach(line => {
+    let cleanLine = line.trim();
+    if (!cleanLine) return;
+
+    let dims = extractDimensionsFromString(cleanLine);
+    addNewLeafRow(`${leafCounter}${getOrdinalSymbol(leafCounter)}`, cleanLine, dims.w, dims.d, dims.l);
+    leafCounter++;
+  });
+
+  inputField.value = "";
+}
+
+function importExcelTemplate(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const data = new Uint8Array(e.target.result);
+    const workbook = XLSX.read(data, { type: 'array' });
+
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    if (jsonRows.length < 1) return;
+
+    let headers = jsonRows[0].map(h => String(h || "").trim().toLowerCase());
+
+    let rawStrIdx = headers.findIndex(h => h.includes("raw") || h.includes("string") || h.includes("erp"));
+    let widthIdx = headers.findIndex(h => h.includes("width"));
+    let diaIdx = headers.findIndex(h => h.includes("dia") || h.includes("thick") || h.includes("thickness"));
+    let lengthIdx = headers.findIndex(h => h.includes("length"));
+
+    if (rawStrIdx === -1) rawStrIdx = 1;
+    if (widthIdx === -1) widthIdx = 2;
+    if (diaIdx === -1) diaIdx = 3;
+    if (lengthIdx === -1) lengthIdx = 4;
+
+    const tbody = document.getElementById("tableBody");
+    let leafCounter = tbody.children.length + 1;
+    let parsedCount = 0;
+
+    for (let i = 1; i < jsonRows.length; i++) {
+      const rowData = jsonRows[i];
+      if (!rowData || rowData.length === 0) continue;
+
+      const firstCellText = String(rowData[0] || "").toLowerCase().trim();
+      if (firstCellText.includes("total") || firstCellText.includes("summary") || firstCellText.includes("semi glossy") || firstCellText.includes("thinner qty")) {
+        continue;
+      }
+
+      let w = parseFloat(rowData[widthIdx]) || 0;
+      let d = parseFloat(rowData[diaIdx]) || 0;
+      let l = parseFloat(rowData[lengthIdx]) || 0;
+
+      let rawStringCell = String(rowData[rawStrIdx] || "").trim();
+
+      if (w === 0 && d === 0 && l === 0) {
+        if (rawStringCell) {
+          let parsed = extractDimensionsFromString(rawStringCell);
+          w = parsed.w; d = parsed.d; l = parsed.l;
+        } else {
+          for (let c = 0; c < rowData.length; c++) {
+            let cellVal = String(rowData[c] || "").trim();
+            if (cellVal.includes("X") || cellVal.includes("x") || cellVal.includes("*")) {
+              let parsed = extractDimensionsFromString(cellVal);
+              if (parsed.w > 0 || parsed.d > 0 || parsed.l > 0) {
+                w = parsed.w; d = parsed.d; l = parsed.l;
+                rawStringCell = cellVal;
+                break;
+              }
             }
+          }
         }
+      }
 
-        function clearAllRows() {
-            document.getElementById("tableBody").innerHTML = "";
-            document.getElementById("uploadStatus").classList.add("hidden");
-            document.getElementById("excelTemplateInput").value = "";
-            runCalculations();
-        }
+      if (w === 0 && d === 0 && l === 0) continue;
 
-        function extractDimensionsFromString(str) {
-            if (!str) return { w: 0, d: 0, l: 0 };
-            let numbersOnly = String(str).toUpperCase().replace("MM", "").trim();
-            let dimensions = numbersOnly.split(/[xX\*]/);
-            let w = 0, d = 0, l = 0;
+      let generatedRawString = rawStringCell || `${w} X ${d} X ${l} MM`;
+      addNewLeafRow(`${leafCounter}${getOrdinalSymbol(leafCounter)}`, generatedRawString, w, d, l);
+      leafCounter++;
+      parsedCount++;
+    }
 
-            if (dimensions.length >= 3) {
-                w = parseFloat(dimensions[0].trim()) || 0;
-                d = parseFloat(dimensions[1].trim()) || 0;
-                l = parseFloat(dimensions[2].trim()) || 0;
-            } else {
-                let matches = numbersOnly.match(/[-+]?[0-9]*\.?[0-9]+/g);
-                if (matches && matches.length >= 3) {
-                    w = parseFloat(matches[0]) || 0;
-                    d = parseFloat(matches[1]) || 0;
-                    l = parseFloat(matches[2]) || 0;
-                }
-            }
-            return { w, d, l };
-        }
+    const statusBox = document.getElementById("uploadStatus");
+    statusBox.innerText = `✅ Loaded ${parsedCount} items successfully from template!`;
+    statusBox.classList.remove("hidden");
+  };
+  reader.readAsArrayBuffer(file);
+}
 
-        function processERPData() {
-            const inputField = document.getElementById("erpInput");
-            const rawText = inputField.value;
-            if (!rawText.trim()) return; 
+function addNewLeafRow(label, rawString, widthVal, diaVal, lengthVal) {
+  const tbody = document.getElementById("tableBody");
+  const index = tbody.children.length + 1;
 
-            const lines = rawText.split('\n');
-            const tbody = document.getElementById("tableBody");
-            let leafCounter = tbody.children.length + 1;
+  const row = document.createElement("tr");
+  row.className = "hover:bg-slate-50 transition-colors";
+  row.innerHTML = `
+      <td class="p-3 font-sans font-medium text-slate-900 row-label">${label}</td>
+      <td class="p-3">
+          <input type="text" class="w-full px-2 py-1 border border-slate-200 rounded bg-slate-50 text-slate-500 text-[11px]"
+                 value="${rawString}" readonly id="textStr_${index}">
+      </td>
+      <td class="p-3">
+          <input type="number" step="any" value="${widthVal}" class="w-full px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none val-w text-slate-800" oninput="handleFieldChange(this)">
+      </td>
+      <td class="p-3">
+          <input type="number" step="any" value="${diaVal}" class="w-full px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none val-d text-slate-800" oninput="handleFieldChange(this)">
+      </td>
+      <td class="p-3">
+          <input type="number" step="any" value="${lengthVal}" class="w-full px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none val-l text-slate-800" oninput="handleFieldChange(this)">
+      </td>
+      <td class="p-3 text-slate-600 out-increase bg-amber-50/10">0.0000</td>
+      <td class="p-3 font-semibold text-blue-700 bg-blue-50/20 out-primer">0.0000</td>
+      <td class="p-3 text-blue-800 out-thinner">0.0000</td>
+      <td class="p-3 text-center">
+          <button onclick="removeLeafRow(this)" class="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 cursor-pointer transition">
+              🗑️
+          </button>
+      </td>
+      <input type="hidden" class="out-weight-raw" value="0.0000">
+  `;
+  tbody.appendChild(row);
+  runCalculations();
+}
 
-            lines.forEach(line => {
-                let cleanLine = line.trim();
-                if (!cleanLine) return; 
+function getOrdinalSymbol(v) {
+  let rem10 = v % 10, rem100 = v % 100;
+  if (rem10 == 1 && rem100 != 11) return "st";
+  if (rem10 == 2 && rem100 != 12) return "nd";
+  if (rem10 == 3 && rem100 != 13) return "rd";
+  return "th";
+}
 
-                let dims = extractDimensionsFromString(cleanLine);
-                addNewLeafRow(`${leafCounter}${getOrdinalSymbol(leafCounter)}`, cleanLine, dims.w, dims.d, dims.l);
-                leafCounter++;
-            });
+function handleFieldChange(input) {
+  const row = input.closest("tr");
+  const w = parseFloat(row.querySelector(".val-w").value) || 0;
+  const d = parseFloat(row.querySelector(".val-d").value) || 0;
+  const l = parseFloat(row.querySelector(".val-l").value) || 0;
 
-            inputField.value = "";
-        }
+  const rowIndex = Array.from(row.parentNode.children).indexOf(row) + 1;
+  const stringBox = document.getElementById(`textStr_${rowIndex}`);
+  if (stringBox) stringBox.value = `${w} X ${d} X ${l} MM`;
 
-        function importExcelTemplate(event) {
-            const file = event.target.files[0];
-            if (!file) return;
+  runCalculations();
+}
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                
-                const jsonRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-                if (jsonRows.length < 1) return;
+function removeLeafRow(button) {
+  button.closest("tr").remove();
+  realignRowLabels();
+  runCalculations();
+}
 
-                let headers = jsonRows[0].map(h => String(h || "").trim().toLowerCase());
-                
-                let rawStrIdx = headers.findIndex(h => h.includes("raw") || h.includes("string") || h.includes("erp"));
-                let widthIdx = headers.findIndex(h => h.includes("width"));
-                let diaIdx = headers.findIndex(h => h.includes("dia") || h.includes("thick") || h.includes("thickness"));
-                let lengthIdx = headers.findIndex(h => h.includes("length"));
+function realignRowLabels() {
+  const rows = document.querySelectorAll("#tableBody tr");
+  rows.forEach((row, idx) => {
+    const actualIndex = idx + 1;
+    row.querySelector(".row-label").innerText = `${actualIndex}${getOrdinalSymbol(actualIndex)}`;
+    const stringBox = row.querySelector(`[id^="textStr_"]`);
+    if (stringBox) stringBox.id = `textStr_${actualIndex}`;
+  });
+}
 
-                if (rawStrIdx === -1) rawStrIdx = 1;
-                if (widthIdx === -1) widthIdx = 2; 
-                if (diaIdx === -1) diaIdx = 3;
-                if (lengthIdx === -1) lengthIdx = 4;
+function runCalculations() {
+  const rows = document.querySelectorAll("#tableBody tr");
 
-                const tbody = document.getElementById("tableBody");
-                let leafCounter = tbody.children.length + 1;
-                let parsedCount = 0;
+  let accumulatedW = 0, accumulatedD = 0, accumulatedL = 0;
+  let accumulatedInc = 0, accumulatedPrm = 0, accumulatedThn = 0, accumulatedWgtRaw = 0;
 
-                for (let i = 1; i < jsonRows.length; i++) {
-                    const rowData = jsonRows[i];
-                    if (!rowData || rowData.length === 0) continue;
+  rows.forEach(row => {
+    const w = parseFloat(row.querySelector(".val-w").value) || 0;
+    const d = parseFloat(row.querySelector(".val-d").value) || 0;
+    const l = parseFloat(row.querySelector(".val-l").value) || 0;
 
-                    const firstCellText = String(rowData[0] || "").toLowerCase().trim();
-                    if (firstCellText.includes("total") || firstCellText.includes("summary") || firstCellText.includes("semi glossy") || firstCellText.includes("thinner qty")) {
-                        continue;
-                    }
+    const baseWeight = w * d * l * STRUCTURAL_FACTOR;
+    const incrementalWeight = baseWeight * 1.05;
+    const primerVolume = incrementalWeight * COATING_FACTOR;
+    const thinnerVolume = primerVolume / 2;
 
-                    let w = parseFloat(rowData[widthIdx]) || 0;
-                    let d = parseFloat(rowData[diaIdx]) || 0;
-                    let l = parseFloat(rowData[lengthIdx]) || 0;
+    row.querySelector(".out-increase").innerText = incrementalWeight.toFixed(4);
+    row.querySelector(".out-primer").innerText = primerVolume.toFixed(4);
+    row.querySelector(".out-thinner").innerText = thinnerVolume.toFixed(4);
 
-                    let rawStringCell = String(rowData[rawStrIdx] || "").trim();
+    row.querySelector(".out-weight-raw").value = baseWeight.toFixed(4);
 
-                    // If numeric columns are missing/NaN, extract dimensions directly from RAW ERP STRING
-                    if (w === 0 && d === 0 && l === 0) {
-                        if (rawStringCell) {
-                            let parsed = extractDimensionsFromString(rawStringCell);
-                            w = parsed.w;
-                            d = parsed.d;
-                            l = parsed.l;
-                        } else {
-                            // Check all cells in row for a dimension string format (e.g. 120 X 14 X 1190 MM)
-                            for (let c = 0; c < rowData.length; c++) {
-                                let cellVal = String(rowData[c] || "").trim();
-                                if (cellVal.includes("X") || cellVal.includes("x") || cellVal.includes("*")) {
-                                    let parsed = extractDimensionsFromString(cellVal);
-                                    if (parsed.w > 0 || parsed.d > 0 || parsed.l > 0) {
-                                        w = parsed.w;
-                                        d = parsed.d;
-                                        l = parsed.l;
-                                        rawStringCell = cellVal;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+    accumulatedW += w; accumulatedD += d; accumulatedL += l;
+    accumulatedInc += incrementalWeight;
+    accumulatedPrm += primerVolume; accumulatedThn += thinnerVolume;
+    accumulatedWgtRaw += baseWeight;
+  });
 
-                    if (w === 0 && d === 0 && l === 0) continue;
+  document.getElementById("totalWidth").innerText = accumulatedW.toFixed(1);
+  document.getElementById("totalDia").innerText = accumulatedD.toFixed(1);
+  document.getElementById("totalLength").innerText = accumulatedL.toFixed(1);
+  document.getElementById("totalIncrease").innerText = accumulatedInc.toFixed(4);
+  document.getElementById("totalPrimer").innerText = accumulatedPrm.toFixed(4);
+  document.getElementById("totalThinner").innerText = accumulatedThn.toFixed(4);
 
-                    let generatedRawString = rawStringCell || `${w} X ${d} X ${l} MM`;
-                    addNewLeafRow(`${leafCounter}${getOrdinalSymbol(leafCounter)}`, generatedRawString, w, d, l);
-                    leafCounter++;
-                    parsedCount++;
-                }
+  let aggregatedWeightStr = accumulatedWgtRaw.toFixed(4);
+  document.getElementById("calcTable").setAttribute("data-raw-weight-total", aggregatedWeightStr);
 
-                const statusBox = document.getElementById("uploadStatus");
-                statusBox.innerText = `✅ Loaded ${parsedCount} items successfully from template!`;
-                statusBox.classList.remove("hidden");
-            };
-            reader.readAsArrayBuffer(file);
-        }
+  const globalSemiGlossyQty = (40 * 7 * accumulatedInc) / (54 * 1000);
+  const globalThinnerGQty = (14 * 7 * accumulatedInc) / (54 * 1000);
 
-        function addNewLeafRow(label, rawString, widthVal, diaVal, lengthVal) {
-            const tbody = document.getElementById("tableBody");
-            const index = tbody.children.length + 1;
+  document.getElementById("globalSemiGlossy").innerText = globalSemiGlossyQty.toFixed(4);
+  document.getElementById("globalThinnerG").innerText = globalThinnerGQty.toFixed(4);
+}
 
-            const row = document.createElement("tr");
-            row.className = "hover:bg-slate-50 transition-colors";
-            row.innerHTML = `
-                <td class="p-3 font-sans font-medium text-slate-900 row-label">${label}</td>
-                <td class="p-3">
-                    <input type="text" class="w-full px-2 py-1 border border-slate-200 rounded bg-slate-50 text-slate-500 text-[11px]" 
-                           value="${rawString}" readonly id="textStr_${index}">
-                </td>
-                <td class="p-3">
-                    <input type="number" step="any" value="${widthVal}" class="w-full px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none val-w text-slate-800" oninput="handleFieldChange(this)">
-                </td>
-                <td class="p-3">
-                    <input type="number" step="any" value="${diaVal}" class="w-full px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none val-d text-slate-800" oninput="handleFieldChange(this)">
-                </td>
-                <td class="p-3">
-                    <input type="number" step="any" value="${lengthVal}" class="w-full px-2 py-1 border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 focus:outline-none val-l text-slate-800" oninput="handleFieldChange(this)">
-                </td>
-                <td class="p-3 text-slate-600 out-increase bg-amber-50/10">0.0000</td>
-                <td class="p-3 font-semibold text-blue-700 bg-blue-50/20 out-primer">0.0000</td>
-                <td class="p-3 text-blue-800 out-thinner">0.0000</td>
-                <td class="p-3 text-center">
-                    <button onclick="removeLeafRow(this)" class="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 cursor-pointer transition">
-                        🗑️
-                    </button>
-                </td>
-                <input type="hidden" class="out-weight-raw" value="0.0000">
-            `;
-            tbody.appendChild(row);
-            runCalculations();
-        }
+function exportToExcelFormat() {
+  const rows = document.querySelectorAll("#tableBody tr");
 
-        function getOrdinalSymbol(v) {
-            let rem10 = v % 10, rem100 = v % 100;
-            if (rem10 == 1 && rem100 != 11) return "st";
-            if (rem10 == 2 && rem100 != 12) return "nd";
-            if (rem10 == 3 && rem100 != 13) return "rd";
-            return "th";
-        }
+  let dataset = [[
+    "LEAVES", "RAW ERP STRING", "WIDTH", "DIA", "LENGTH", "NORMAL WEIGHT", "5% INCREASE WEIGHT", "40/ PRIMER", "20/ THINNER"
+  ]];
 
-        function handleFieldChange(input) {
-            const row = input.closest("tr");
-            const w = parseFloat(row.querySelector(".val-w").value) || 0;
-            const d = parseFloat(row.querySelector(".val-d").value) || 0;
-            const l = parseFloat(row.querySelector(".val-l").value) || 0;
-            
-            const rowIndex = Array.from(row.parentNode.children).indexOf(row) + 1;
-            const stringBox = document.getElementById(`textStr_${rowIndex}`);
-            if(stringBox) stringBox.value = `${w} X ${d} X ${l} MM`;
-            
-            runCalculations();
-        }
+  rows.forEach((row) => {
+    const label = row.querySelector(".row-label").innerText;
+    const pasteStr = row.querySelector(`[id^="textStr_"]`).value;
+    const w = parseFloat(row.querySelector(".val-w").value) || 0;
+    const d = parseFloat(row.querySelector(".val-d").value) || 0;
+    const l = parseFloat(row.querySelector(".val-l").value) || 0;
 
-        function removeLeafRow(button) {
-            button.closest("tr").remove();
-            realignRowLabels();
-            runCalculations();
-        }
+    const weight = parseFloat(row.querySelector(".out-weight-raw").value) || 0;
+    const increase = parseFloat(row.querySelector(".out-increase").innerText);
+    const primer = parseFloat(row.querySelector(".out-primer").innerText);
+    const thinner = parseFloat(row.querySelector(".out-thinner").innerText);
 
-        function realignRowLabels() {
-            const rows = document.querySelectorAll("#tableBody tr");
-            rows.forEach((row, idx) => {
-                const actualIndex = idx + 1;
-                row.querySelector(".row-label").innerText = `${actualIndex}${getOrdinalSymbol(actualIndex)}`;
-                const stringBox = row.querySelector(`[id^="textStr_"]`);
-                if(stringBox) stringBox.id = `textStr_${actualIndex}`;
-            });
-        }
+    dataset.push([label, pasteStr, w, d, l, weight, increase, primer, thinner]);
+  });
 
-        function runCalculations() {
-            const rows = document.querySelectorAll("#tableBody tr");
-            
-            let accumulatedW = 0, accumulatedD = 0, accumulatedL = 0;
-            let accumulatedInc = 0, accumulatedPrm = 0, accumulatedThn = 0, accumulatedWgtRaw = 0;
+  const rawTotalWeight = parseFloat(document.getElementById("calcTable").getAttribute("data-raw-weight-total")) || 0;
 
-            rows.forEach(row => {
-                const w = parseFloat(row.querySelector(".val-w").value) || 0;
-                const d = parseFloat(row.querySelector(".val-d").value) || 0;
-                const l = parseFloat(row.querySelector(".val-l").value) || 0;
+  dataset.push([
+    "TOTALS", "",
+    parseFloat(document.getElementById("totalWidth").innerText),
+    parseFloat(document.getElementById("totalDia").innerText),
+    parseFloat(document.getElementById("totalLength").innerText),
+    rawTotalWeight,
+    parseFloat(document.getElementById("totalIncrease").innerText),
+    parseFloat(document.getElementById("totalPrimer").innerText),
+    parseFloat(document.getElementById("totalThinner").innerText)
+  ]);
 
-                const baseWeight = w * d * l * STRUCTURAL_FACTOR;
-                const incrementalWeight = baseWeight * 1.05;
-                const primerVolume = incrementalWeight * COATING_FACTOR;
-                const thinnerVolume = primerVolume / 2;
+  dataset.push([]);
 
-                row.querySelector(".out-increase").innerText = incrementalWeight.toFixed(4);
-                row.querySelector(".out-primer").innerText = primerVolume.toFixed(4);
-                row.querySelector(".out-thinner").innerText = thinnerVolume.toFixed(4);
-                
-                row.querySelector(".out-weight-raw").value = baseWeight.toFixed(4);
+  const semiGlossTotal = parseFloat(document.getElementById("globalSemiGlossy").innerText);
+  const thinnerGTotal = parseFloat(document.getElementById("globalThinnerG").innerText);
 
-                accumulatedW += w; accumulatedD += d; accumulatedL += l;
-                accumulatedInc += incrementalWeight;
-                accumulatedPrm += primerVolume; accumulatedThn += thinnerVolume;
-                accumulatedWgtRaw += baseWeight;
-            });
+  dataset.push(["GLOBAL METRICS FORMULA SUMMARY"]);
+  dataset.push(["SEMI GLOSSY QTY", semiGlossTotal]);
+  dataset.push(["THINNER QTY (G)", thinnerGTotal]);
 
-            document.getElementById("totalWidth").innerText = accumulatedW.toFixed(1);
-            document.getElementById("totalDia").innerText = accumulatedD.toFixed(1);
-            document.getElementById("totalLength").innerText = accumulatedL.toFixed(1);
-            document.getElementById("totalIncrease").innerText = accumulatedInc.toFixed(4);
-            document.getElementById("totalPrimer").innerText = accumulatedPrm.toFixed(4);
-            document.getElementById("totalThinner").innerText = accumulatedThn.toFixed(4);
-            
-            let aggregatedWeightStr = accumulatedWgtRaw.toFixed(4);
-            document.getElementById("calcTable").setAttribute("data-raw-weight-total", aggregatedWeightStr);
+  const worksheet = XLSX.utils.aoa_to_sheet(dataset);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Production Summary");
 
-            const globalSemiGlossyQty = (40 * 7 * accumulatedInc) / (54 * 1000);
-            const globalThinnerGQty = (14 * 7 * accumulatedInc) / (54 * 1000);
+  XLSX.writeFile(workbook, "ERP_Leaf_Spring_Calculations.xlsx");
+}
 
-            document.getElementById("globalSemiGlossy").innerText = globalSemiGlossyQty.toFixed(4);
-            document.getElementById("globalThinnerG").innerText = globalThinnerGQty.toFixed(4);
-        }
-
-        function exportToExcelFormat() {
-            const rows = document.querySelectorAll("#tableBody tr");
-            
-            let dataset = [[
-                "LEAVES", "RAW ERP STRING", "WIDTH", "DIA", "LENGTH", "NORMAL WEIGHT", "5% INCREASE WEIGHT", "40/ PRIMER", "20/ THINNER"
-            ]];
-
-            rows.forEach((row, idx) => {
-                const label = row.querySelector(".row-label").innerText;
-                const pasteStr = row.querySelector(`[id^="textStr_"]`).value;
-                const w = parseFloat(row.querySelector(".val-w").value) || 0;
-                const d = parseFloat(row.querySelector(".val-d").value) || 0;
-                const l = parseFloat(row.querySelector(".val-l").value) || 0;
-                
-                const weight = parseFloat(row.querySelector(".out-weight-raw").value) || 0;
-                const increase = parseFloat(row.querySelector(".out-increase").innerText);
-                const primer = parseFloat(row.querySelector(".out-primer").innerText);
-                const thinner = parseFloat(row.querySelector(".out-thinner").innerText);
-
-                dataset.push([label, pasteStr, w, d, l, weight, increase, primer, thinner]);
-            });
-
-            const rawTotalWeight = parseFloat(document.getElementById("calcTable").getAttribute("data-raw-weight-total")) || 0;
-
-            dataset.push([
-                "TOTALS", "",
-                parseFloat(document.getElementById("totalWidth").innerText),
-                parseFloat(document.getElementById("totalDia").innerText),
-                parseFloat(document.getElementById("totalLength").innerText),
-                rawTotalWeight,
-                parseFloat(document.getElementById("totalIncrease").innerText),
-                parseFloat(document.getElementById("totalPrimer").innerText),
-                parseFloat(document.getElementById("totalThinner").innerText)
-            ]);
-
-            dataset.push([]);
-            
-            const semiGlossTotal = parseFloat(document.getElementById("globalSemiGlossy").innerText);
-            const thinnerGTotal = parseFloat(document.getElementById("globalThinnerG").innerText);
-            
-            dataset.push(["GLOBAL METRICS FORMULA SUMMARY"]);
-            dataset.push(["SEMI GLOSSY QTY", semiGlossTotal]);
-            dataset.push(["THINNER QTY (G)", thinnerGTotal]);
-
-            const worksheet = XLSX.utils.aoa_to_sheet(dataset);
-            const workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, worksheet, "Production Summary");
-
-            XLSX.writeFile(workbook, "ERP_Leaf_Spring_Calculations.xlsx");
-        }
-    </script>
+// No demo/auto-run — table starts empty; populate via PDF upload, paste, or Excel import.
+runCalculations();
+</script>
 </body>
 </html>
