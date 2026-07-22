@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,7 +20,7 @@
   <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
     <div class="border-b border-slate-100 pb-3 mb-4">
       <h2 class="text-lg font-bold text-slate-900">1. Upload Leaf BOM PDF(s)</h2>
-      <p class="text-xs text-slate-500 mt-0.5">Upload one or more Leaf BOM PDFs. Material sections are extracted automatically and added straight into the calculation table below. If the PDF also prints its own Primer/Thinner values, those are compared against the calculated ones — matching leaves are highlighted green (✅), mismatches red (⚠️).</p>
+      <p class="text-xs text-slate-500 mt-0.5">Upload one or more Leaf BOM PDFs. Material sections are extracted automatically and added straight into the calculation table below. If the PDF prints its own Primer/Thinner values, and a "SPRING STEEL FLAT" BOM quantity (checked against the calculated 5% Increase Weight), those are compared to the calculated ones — matching leaves are highlighted green (✅), mismatches red (⚠️).</p>
     </div>
     <input type="file" id="pdfFiles" accept="application/pdf" multiple
            class="w-full text-sm border border-slate-300 rounded-lg p-2.5 mb-3 bg-slate-50" />
@@ -40,6 +39,7 @@
             <th class="p-2 border border-slate-200 text-left">Raw ERP String Extracted</th>
             <th class="p-2 border border-slate-200 text-left">File Name</th>
             <th class="p-2 border border-slate-200 text-left">PDF Primer / Thinner</th>
+            <th class="p-2 border border-slate-200 text-left">PDF SPRING STEEL FLAT Qty</th>
             <th class="p-2 border border-slate-200 text-left">Debug</th>
           </tr>
         </thead>
@@ -121,6 +121,7 @@
             <th class="p-3 text-blue-800 bg-blue-100/30">20/ Thinner</th>
             <th class="p-3 w-20 text-slate-500">PDF Primer</th>
             <th class="p-3 w-20 text-slate-500">PDF Thinner</th>
+            <th class="p-3 w-24 text-slate-500">PDF BOM Qty</th>
             <th class="p-3 w-16 text-center">Match</th>
             <th class="p-3 w-12 text-center text-rose-600">Action</th>
           </tr>
@@ -135,6 +136,7 @@
             <td id="totalIncrease" class="p-4 text-amber-300 font-bold bg-slate-700">0.0000</td>
             <td id="totalPrimer" class="p-4 text-blue-300">0.0000</td>
             <td id="totalThinner" class="p-4 text-blue-200">0.0000</td>
+            <td class="p-4"></td>
             <td class="p-4"></td>
             <td class="p-4"></td>
             <td class="p-4"></td>
@@ -255,9 +257,16 @@ function collapseWhitespace(fullText) {
 // PDF layouts vary; always sanity check against the debug "View text" for that leaf.
 function extractReferenceValue(fullText, keyword) {
   const text = collapseWhitespace(fullText);
-  const regex = new RegExp(`${keyword}[^0-9]{0,20}([0-9]+(?:\\.[0-9]+)?)`, 'i');
-  const match = text.match(regex);
-  return match ? parseFloat(match[1]) : null;
+  const regex = new RegExp(`${keyword}[^0-9]{0,20}([0-9]+(?:\\.[0-9]+)?)`, 'gi');
+  let match, matches = [];
+  while ((match = regex.exec(text)) !== null) matches.push(parseFloat(match[1]));
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+  // Multiple occurrences of the keyword in the document (header/legend + BOM line, etc.) —
+  // taking the first one silently, as before, risks grabbing the wrong figure. Prefer the
+  // last occurrence, since BOM material lines with the actual quantity typically appear
+  // after any earlier mentions of the word (title blocks, notes) in these PDFs.
+  return matches[matches.length - 1];
 }
 
 // Compares a calculated value against a PDF-printed reference value with a small tolerance
@@ -266,6 +275,37 @@ function compareToReference(calculated, reference) {
   if (reference === null || reference === undefined || isNaN(reference)) return 'none';
   const tolerance = Math.max(0.0005, Math.abs(reference) * 0.01); // 1% or 0.0005, whichever is larger
   return Math.abs(calculated - reference) <= tolerance ? 'match' : 'mismatch';
+}
+
+// Finds the BOM quantity printed next to the "SPRING STEEL FLAT" line — this is the raw-material
+// row in the BOM, and its quantity is expected to equal the calculated "5% Increase Weight".
+// The line typically reads like "SPRING STEEL FLAT  63.5 X 4.76 X 1165 MM  0.7048", so this
+// skips the keyword, skips the WxTxL dimension right after it, then takes the next decimal number.
+function extractSpringSteelFlatQty(fullText) {
+  const text = collapseWhitespace(fullText);
+  const idx = text.search(/spring\s*steel\s*flat/i);
+  if (idx === -1) return null;
+
+  let rest = text.slice(idx).replace(/spring\s*steel\s*flat/i, '');
+
+  const xSign = `[xX*×✕✖⨯\\u00D7\\u03A7]`;
+  const numPattern = `(?:\\d+(?:\\.\\d+)?)`;
+  // "MM" is optional here — some PDFs print the dimension without the unit suffix.
+  // Without this, a slightly different layout falls through to the fallback below
+  // and silently grabs a dimension number (e.g. the width) instead of the real qty.
+  const dimSkipRegex = new RegExp(`^\\s*${numPattern}\\s*${xSign}\\s*${numPattern}\\s*${xSign}\\s*${numPattern}(\\s*MM)?`, 'i');
+  const dimMatch = rest.match(dimSkipRegex);
+
+  if (dimMatch) {
+    rest = rest.slice(dimMatch[0].length);
+    // Accept whole numbers too (e.g. "1"), not just decimals like "0.7048"
+    const qtyMatch = rest.match(/([0-9]+(?:\.[0-9]+)?)/);
+    return qtyMatch ? parseFloat(qtyMatch[1]) : null;
+  }
+
+  // Couldn't confidently find/skip the WxTxL dimension after the keyword — bail out
+  // rather than risk grabbing a dimension number and mislabeling it as the BOM qty.
+  return null;
 }
 
 async function processPDFs() {
@@ -305,8 +345,9 @@ async function processPDFs() {
     const leafNum = extractLeafOrder(file.name, fullText);
     const pdfPrimer = extractReferenceValue(fullText, 'PRIMER');
     const pdfThinner = extractReferenceValue(fullText, 'THINNER');
+    const pdfBomQty = extractSpringSteelFlatQty(fullText);
 
-    extractedLeaves.push({ fileName: file.name, leafNum, materialSection, rawText: fullText, pdfPrimer, pdfThinner });
+    extractedLeaves.push({ fileName: file.name, leafNum, materialSection, rawText: fullText, pdfPrimer, pdfThinner, pdfBomQty });
   }
 
   extractedLeaves.sort((a, b) => a.leafNum - b.leafNum);
@@ -316,7 +357,7 @@ async function processPDFs() {
   extractedLeaves.forEach((item, index) => {
     const leafLabel = getOrdinal(index + 1);
     const dims = extractDimensionsFromString(item.materialSection);
-    addNewLeafRow(leafLabel, item.materialSection || `${dims.w} X ${dims.d} X ${dims.l} MM`, dims.w, dims.d, dims.l, item.pdfPrimer, item.pdfThinner);
+    addNewLeafRow(leafLabel, item.materialSection || `${dims.w} X ${dims.d} X ${dims.l} MM`, dims.w, dims.d, dims.l, item.pdfPrimer, item.pdfThinner, item.pdfBomQty);
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -324,6 +365,7 @@ async function processPDFs() {
       <td class="p-2 border border-slate-200"><code>${item.materialSection || 'N/A'}</code></td>
       <td class="p-2 border border-slate-200">${item.fileName}</td>
       <td class="p-2 border border-slate-200">${item.pdfPrimer !== null ? item.pdfPrimer : '—'} / ${item.pdfThinner !== null ? item.pdfThinner : '—'}</td>
+      <td class="p-2 border border-slate-200">${item.pdfBomQty !== null ? item.pdfBomQty : '—'}</td>
       <td class="p-2 border border-slate-200"><button type="button" class="px-2 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 rounded" onclick="showDebugText(${index})">View text</button></td>
     `;
     previewBody.appendChild(tr);
@@ -485,7 +527,7 @@ function importExcelTemplate(event) {
   reader.readAsArrayBuffer(file);
 }
 
-function addNewLeafRow(label, rawString, widthVal, diaVal, lengthVal, pdfPrimer = null, pdfThinner = null) {
+function addNewLeafRow(label, rawString, widthVal, diaVal, lengthVal, pdfPrimer = null, pdfThinner = null, pdfBomQty = null) {
   const tbody = document.getElementById("tableBody");
   const index = tbody.children.length + 1;
 
@@ -493,6 +535,7 @@ function addNewLeafRow(label, rawString, widthVal, diaVal, lengthVal, pdfPrimer 
   row.className = "hover:bg-slate-50 transition-colors";
   if (pdfPrimer !== null && pdfPrimer !== undefined) row.dataset.pdfPrimer = pdfPrimer;
   if (pdfThinner !== null && pdfThinner !== undefined) row.dataset.pdfThinner = pdfThinner;
+  if (pdfBomQty !== null && pdfBomQty !== undefined) row.dataset.pdfBomQty = pdfBomQty;
   row.innerHTML = `
       <td class="p-3 font-sans font-medium text-slate-900 row-label">${label}</td>
       <td class="p-3">
@@ -513,6 +556,7 @@ function addNewLeafRow(label, rawString, widthVal, diaVal, lengthVal, pdfPrimer 
       <td class="p-3 text-blue-800 out-thinner">0.0000</td>
       <td class="p-3 text-slate-500 pdf-primer-val">${pdfPrimer !== null && pdfPrimer !== undefined ? pdfPrimer : '—'}</td>
       <td class="p-3 text-slate-500 pdf-thinner-val">${pdfThinner !== null && pdfThinner !== undefined ? pdfThinner : '—'}</td>
+      <td class="p-3 text-slate-500 pdf-bomqty-val">${pdfBomQty !== null && pdfBomQty !== undefined ? pdfBomQty : '—'}</td>
       <td class="p-3 text-center match-status">—</td>
       <td class="p-3 text-center">
           <button onclick="removeLeafRow(this)" class="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 cursor-pointer transition">
@@ -584,22 +628,55 @@ function runCalculations() {
 
     row.querySelector(".out-weight-raw").value = baseWeight.toFixed(4);
 
-    // Compare calculated primer/thinner against PDF-printed reference values, if present
+    // Compare calculated values against PDF-printed reference values, if present
     const pdfPrimerRef = row.dataset.pdfPrimer !== undefined ? parseFloat(row.dataset.pdfPrimer) : null;
     const pdfThinnerRef = row.dataset.pdfThinner !== undefined ? parseFloat(row.dataset.pdfThinner) : null;
+    const pdfBomQtyRef = row.dataset.pdfBomQty !== undefined ? parseFloat(row.dataset.pdfBomQty) : null;
     const primerStatus = compareToReference(primerVolume, pdfPrimerRef);
     const thinnerStatus = compareToReference(thinnerVolume, pdfThinnerRef);
+    const bomQtyStatus = compareToReference(incrementalWeight, pdfBomQtyRef); // vs "5% Increase Weight"
 
     const matchCell = row.querySelector(".match-status");
     row.classList.remove("bg-emerald-50", "bg-rose-50", "ring-2", "ring-emerald-400", "ring-rose-400");
 
-    if (primerStatus === 'none' && thinnerStatus === 'none') {
+    // Highlight only the specific cell(s) that actually mismatch, so it's obvious
+    // *which* value is wrong (weight vs primer vs thinner), not just that "something" is off.
+    const cellChecks = [
+      { status: bomQtyStatus, calcCell: row.querySelector(".out-increase"), refCell: row.querySelector(".pdf-bomqty-val"), calc: incrementalWeight, ref: pdfBomQtyRef, label: "5% Increase Weight" },
+      { status: primerStatus, calcCell: row.querySelector(".out-primer"), refCell: row.querySelector(".pdf-primer-val"), calc: primerVolume, ref: pdfPrimerRef, label: "Primer" },
+      { status: thinnerStatus, calcCell: row.querySelector(".out-thinner"), refCell: row.querySelector(".pdf-thinner-val"), calc: thinnerVolume, ref: pdfThinnerRef, label: "Thinner" },
+    ];
+
+    cellChecks.forEach(({ status, calcCell, refCell, calc, ref, label }) => {
+      [calcCell, refCell].forEach(cell => {
+        if (!cell) return;
+        cell.classList.remove("bg-rose-200", "ring-2", "ring-rose-500", "font-bold", "text-rose-900", "bg-emerald-100");
+        cell.removeAttribute("title");
+      });
+      if (status === 'mismatch') {
+        const diff = (calc - ref).toFixed(4);
+        [calcCell, refCell].forEach(cell => {
+          if (!cell) return;
+          cell.classList.add("bg-rose-200", "ring-2", "ring-rose-500", "font-bold", "text-rose-900");
+          cell.title = `${label} mismatch — calculated ${calc.toFixed(4)} vs PDF ${ref.toFixed(4)} (diff ${diff})`;
+        });
+      } else if (status === 'match') {
+        [calcCell, refCell].forEach(cell => {
+          if (!cell) return;
+          cell.classList.add("bg-emerald-100");
+        });
+      }
+    });
+
+    const statuses = [primerStatus, thinnerStatus, bomQtyStatus];
+    if (statuses.every(s => s === 'none')) {
       matchCell.innerHTML = '<span class="text-slate-400">—</span>';
-    } else if (primerStatus !== 'mismatch' && thinnerStatus !== 'mismatch') {
+    } else if (!statuses.includes('mismatch')) {
       matchCell.innerHTML = '<span class="text-emerald-600 font-bold">✅</span>';
       row.classList.add("bg-emerald-50", "ring-2", "ring-emerald-400");
     } else {
-      matchCell.innerHTML = '<span class="text-rose-600 font-bold">⚠️</span>';
+      const mismatchLabels = cellChecks.filter(c => c.status === 'mismatch').map(c => c.label).join(", ");
+      matchCell.innerHTML = `<span class="text-rose-600 font-bold" title="Mismatch on: ${mismatchLabels}">⚠️</span>`;
       row.classList.add("bg-rose-50", "ring-2", "ring-rose-400");
     }
 
@@ -630,7 +707,7 @@ function exportToExcelFormat() {
   const rows = document.querySelectorAll("#tableBody tr");
 
   let dataset = [[
-    "LEAVES", "RAW ERP STRING", "WIDTH", "DIA", "LENGTH", "NORMAL WEIGHT", "5% INCREASE WEIGHT", "40/ PRIMER", "20/ THINNER", "PDF PRIMER", "PDF THINNER", "MATCH"
+    "LEAVES", "RAW ERP STRING", "WIDTH", "DIA", "LENGTH", "NORMAL WEIGHT", "5% INCREASE WEIGHT", "40/ PRIMER", "20/ THINNER", "PDF PRIMER", "PDF THINNER", "PDF BOM QTY (SPRING STEEL FLAT)", "MATCH"
   ]];
 
   rows.forEach((row) => {
@@ -646,9 +723,10 @@ function exportToExcelFormat() {
     const thinner = parseFloat(row.querySelector(".out-thinner").innerText);
     const pdfPrimerText = row.querySelector(".pdf-primer-val").innerText;
     const pdfThinnerText = row.querySelector(".pdf-thinner-val").innerText;
+    const pdfBomQtyText = row.querySelector(".pdf-bomqty-val").innerText;
     const matchText = row.querySelector(".match-status").innerText.trim();
 
-    dataset.push([label, pasteStr, w, d, l, weight, increase, primer, thinner, pdfPrimerText, pdfThinnerText, matchText]);
+    dataset.push([label, pasteStr, w, d, l, weight, increase, primer, thinner, pdfPrimerText, pdfThinnerText, pdfBomQtyText, matchText]);
   });
 
   const rawTotalWeight = parseFloat(document.getElementById("calcTable").getAttribute("data-raw-weight-total")) || 0;
