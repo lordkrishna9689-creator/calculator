@@ -273,7 +273,10 @@ function extractReferenceValue(fullText, keyword) {
 // to absorb rounding differences. Returns 'match', 'mismatch', or 'none' (no reference found).
 function compareToReference(calculated, reference) {
   if (reference === null || reference === undefined || isNaN(reference)) return 'none';
-  const tolerance = Math.max(0.0005, Math.abs(reference) * 0.01); // 1% or 0.0005, whichever is larger
+  // PDFs commonly print Primer/Thinner rounded to 3 decimal places, so a true value like
+  // 0.0066 can appear as 0.006. A 0.0005 floor is too tight to absorb that rounding on
+  // small quantities, so it's raised to 0.001 (still small relative to real weight values).
+  const tolerance = Math.max(0.001, Math.abs(reference) * 0.01); // 1% or 0.001, whichever is larger
   return Math.abs(calculated - reference) <= tolerance ? 'match' : 'mismatch';
 }
 
@@ -286,26 +289,36 @@ function extractSpringSteelFlatQty(fullText) {
   const idx = text.search(/spring\s*steel\s*flat/i);
   if (idx === -1) return null;
 
-  let rest = text.slice(idx).replace(/spring\s*steel\s*flat/i, '');
+  // Look within a window after the keyword — real BOM lines often have extra columns
+  // in between, e.g. "SPRING STEEL FLAT  SUP-9  63.5 X 4.76 X 1165 MM  RM  2.902  1,165.00  KGS"
+  // and the exact column order can shift depending on the PDF and even the pdf.js
+  // version doing the extraction, so position alone isn't reliable.
+  const window = text.slice(idx, idx + 300);
 
   const xSign = `[xX*×✕✖⨯\\u00D7\\u03A7]`;
-  const numPattern = `(?:\\d+(?:\\.\\d+)?)`;
-  // "MM" is optional here — some PDFs print the dimension without the unit suffix.
-  // Without this, a slightly different layout falls through to the fallback below
-  // and silently grabs a dimension number (e.g. the width) instead of the real qty.
-  const dimSkipRegex = new RegExp(`^\\s*${numPattern}\\s*${xSign}\\s*${numPattern}\\s*${xSign}\\s*${numPattern}(\\s*MM)?`, 'i');
-  const dimMatch = rest.match(dimSkipRegex);
+  // pdf.js sometimes splits a decimal into separate text runs (e.g. "63.5" comes out
+  // as "63 . 5"), so the pattern has to tolerate whitespace around the decimal point —
+  // same fix already used in extractMaterialSection() above.
+  const numPattern = `(?:\\d+(?:\\s*\\.\\s*\\d+)?)`;
+  const dimRegex = new RegExp(`(${numPattern})\\s*${xSign}\\s*(${numPattern})\\s*${xSign}\\s*(${numPattern})(\\s*MM)?`, 'i');
+  const dimMatch = window.match(dimRegex);
+  if (!dimMatch) return null;
 
-  if (dimMatch) {
-    rest = rest.slice(dimMatch[0].length);
-    // Accept whole numbers too (e.g. "1"), not just decimals like "0.7048"
-    const qtyMatch = rest.match(/([0-9]+(?:\.[0-9]+)?)/);
-    return qtyMatch ? parseFloat(qtyMatch[1]) : null;
-  }
+  const w = parseFloat(cleanNumber(dimMatch[1])), d = parseFloat(cleanNumber(dimMatch[2])), l = parseFloat(cleanNumber(dimMatch[3]));
+  const expectedWeight = w * d * l * STRUCTURAL_FACTOR * 1.05; // theoretical 5% Increase Weight for this leaf
 
-  // Couldn't confidently find/skip the WxTxL dimension after the keyword — bail out
-  // rather than risk grabbing a dimension number and mislabeling it as the BOM qty.
-  return null;
+  // Gather every plain decimal number after the dimension (skipping thousands-comma
+  // numbers like "1,165.00", which is almost always the Cut Length repeating the
+  // length dimension) and pick whichever is closest to the weight we'd expect. This
+  // sidesteps column-order differences entirely instead of assuming a fixed position.
+  const afterDim = window.slice(dimMatch.index + dimMatch[0].length);
+  const candidateRegex = /(?<![\d,])(\d+\.\d+)(?!\d*,)/g;
+  let m, candidates = [];
+  while ((m = candidateRegex.exec(afterDim)) !== null) candidates.push(parseFloat(m[1]));
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => Math.abs(a - expectedWeight) - Math.abs(b - expectedWeight));
+  return candidates[0];
 }
 
 async function processPDFs() {
