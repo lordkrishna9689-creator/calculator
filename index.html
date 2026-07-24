@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,7 +21,7 @@
   <div class="bg-white rounded-xl shadow-md border border-slate-200 p-6">
     <div class="border-b border-slate-100 pb-3 mb-4">
       <h2 class="text-lg font-bold text-slate-900">1. Upload Leaf BOM PDF(s)</h2>
-      <p class="text-xs text-slate-500 mt-0.5">Upload one or more Leaf BOM PDFs. Material sections are extracted automatically and added straight into the calculation table below. If the PDF prints its own Primer/Thinner values, and a "SPRING STEEL FLAT" BOM quantity (checked against the calculated 5% Increase Weight), those are compared to the calculated ones — matching leaves are highlighted green (✅), mismatches red (⚠️).</p>
+      <p class="text-xs text-slate-500 mt-0.5">Upload one or more Leaf BOM PDFs. Material sections are extracted automatically and added straight into the calculation table below. Primer, Thinner, and Graphite entries are filtered out automatically.</p>
     </div>
     <input type="file" id="pdfFiles" accept="application/pdf" multiple
            class="w-full text-sm border border-slate-300 rounded-lg p-2.5 mb-3 bg-slate-50" />
@@ -101,8 +102,8 @@
         <p class="text-slate-400 text-xs mt-1">Calculations update instantly when editing parameters manually below</p>
       </div>
       <div>
-        <button onclick="exportToExcelFormat()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2 rounded-lg transition text-sm flex items-center gap-1 cursor-pointer w-full sm:w-auto justify-center">
-          📥 Export to Excel (.xlsx)
+        <button onclick="exportAllToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-5 py-2.5 rounded-lg transition text-xs sm:text-sm flex items-center gap-2 cursor-pointer w-full sm:w-auto justify-center shadow-md">
+          📊 Export All Data to Excel (.xlsx)
         </button>
       </div>
     </div>
@@ -167,19 +168,55 @@
       <p class="text-xs text-emerald-200/60 mt-2 font-mono">Formula: = 14 * 7 * SUM(5% Increase) / (54 * 1000)</p>
     </div>
   </div>
+
+  <!-- Non-Leaf BOM Components Section -->
+  <div class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+    <div class="bg-slate-800 text-white p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div>
+        <h2 class="text-md font-bold tracking-tight">Non-Leaf Hardware Components (Extracted from BOM)</h2>
+        <p class="text-slate-400 text-xs mt-0.5">Extracted Code, SubItemName, Units, Bomqty, Pack Capacity, Item Code, Item Name, and Source PDF.</p>
+      </div>
+      <button onclick="exportAllToExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded transition text-xs flex items-center gap-1 cursor-pointer self-start sm:self-auto">
+        📊 Export All
+      </button>
+    </div>
+    <div class="table-container overflow-x-auto w-full">
+      <table id="nonLeafTable" class="w-full text-left border-collapse min-w-[800px]">
+        <thead>
+          <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 text-xs uppercase tracking-wider font-semibold">
+            <th class="p-3 w-12 text-center">#</th>
+            <th class="p-3 w-20">Code</th>
+            <th class="p-3">SubItemName</th>
+            <th class="p-3 w-20">Units</th>
+            <th class="p-3 w-24 text-right">Bomqty</th>
+            <th class="p-3 w-28 text-right">Pack Capacity</th>
+            <th class="p-3 w-28">Item Code</th>
+            <th class="p-3 w-48">Item Name</th>
+            <th class="p-3 w-36">Source PDF</th>
+          </tr>
+        </thead>
+        <tbody id="nonLeafBody" class="divide-y divide-slate-200 text-xs font-mono">
+          <tr>
+            <td colspan="9" class="p-4 text-center text-slate-400 font-sans italic">No non-leaf hardware items extracted yet. Upload PDF BOMs above.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
 
 <script>
 /* ============================================================
-   SECTION A — PDF MATERIAL SECTION EXTRACTOR (from PDF_READER_M_SECTIONS.html)
+   SECTION A — PDF MATERIAL SECTION EXTRACTOR
    ============================================================ */
 
-// Inline worker to bypass file:/// CORS blocks
 const pdfjsWorkerCode = `importScripts('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js');`;
 const workerBlob = new Blob([pdfjsWorkerCode], { type: 'application/javascript' });
 pdfjsLib.GlobalWorkerOptions.workerPort = new Worker(URL.createObjectURL(workerBlob));
 
 let extractedLeavesGlobal = [];
+let extractedNonLeafItemsGlobal = [];
 
 function showDebugText(index) {
   const item = extractedLeavesGlobal[index];
@@ -204,6 +241,28 @@ function extractLeafOrder(filename, fullText) {
   const leafMatch = combined.match(/leaf\s*(\d+)/);
   if (leafMatch) return parseInt(leafMatch[1], 10);
   return 999;
+}
+
+function extractParentItemCode(fullText, fileName) {
+  const match = fullText.match(/Item\s*Code\s*:\s*([A-Za-z0-9_-]+)/i);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  const fileMatch = fileName.match(/^([A-Za-z0-9_-]+)/);
+  if (fileMatch) {
+    return fileMatch[1];
+  }
+  return "—";
+}
+
+function extractParentItemName(fullText) {
+  const match = fullText.match(/Item\s*Name\s*:\s*([^\r\n|]+)/i);
+  if (match && match[1]) {
+    let name = match[1].trim();
+    name = name.replace(/\s*Part\s*Code.*$/i, '').trim();
+    return name;
+  }
+  return "—";
 }
 
 function extractMaterialSection(fullText) {
@@ -252,9 +311,86 @@ function collapseWhitespace(fullText) {
   return fullText.replace(/[\u00A0\r\n]+/g, ' ').replace(/\s+/g, ' ');
 }
 
-// Finds a decimal number printed near a keyword like "PRIMER" or "THINNER" in the PDF text.
-// Returns null if no keyword/number pair is found — this is a best-effort match, since
-// PDF layouts vary; always sanity check against the debug "View text" for that leaf.
+function extractNonLeafComponents(fullText, parentItemCode, parentItemName, sourcePdf) {
+  const items = [];
+  const startIdx = fullText.indexOf("BOM DETAIL");
+  const endIdx = fullText.indexOf("ROUTING DETAIL");
+  
+  let bomSection = fullText;
+  if (startIdx !== -1) bomSection = bomSection.substring(startIdx);
+  if (endIdx !== -1) bomSection = bomSection.substring(0, bomSection.indexOf("ROUTING DETAIL"));
+
+  const lines = bomSection.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+
+    if (/^\d+$/.test(line)) {
+      let code = line;
+      let block = [];
+      let j = i + 1;
+
+      while (j < lines.length) {
+        let nxt = lines[j];
+        if (/^\d+$/.test(nxt) || nxt.startsWith("Process") || nxt.startsWith("ROUTING")) {
+          break;
+        }
+        if (nxt !== "|") {
+          block.push(nxt.replace(/^\|\s*/, "").replace(/\s*\|$/, "").trim());
+        }
+        j++;
+      }
+
+      if (block.length >= 2) {
+        let subItemName = block[0];
+        let units = "PCS";
+        let bomQty = "—";
+        let packCapacity = "—";
+
+        const unitIdx = block.findIndex(b => /^(PCS|KGS|LTR)$/i.test(b));
+        if (unitIdx !== -1) {
+          units = block[unitIdx];
+        }
+
+        let decimals = [];
+        let integers = [];
+
+        block.forEach(b => {
+          if (/^\d+\.\d+$/.test(b)) decimals.push(b);
+          else if (/^\d+$/.test(b)) integers.push(b);
+        });
+
+        if (decimals.length > 0) {
+          bomQty = decimals[0];
+        }
+
+        if (integers.length > 0) {
+          packCapacity = integers[integers.length - 1];
+        }
+
+        const isExcluded = /\bleaf\b|\bspring steel flat\b|\bprimer\b|\bthinner\b|\bgraphite\b/i.test(subItemName);
+
+        if (!isExcluded && subItemName.length > 1) {
+          items.push({
+            code: code,
+            subItemName: subItemName,
+            units: units,
+            bomQty: bomQty,
+            packCapacity: packCapacity,
+            parentItemCode: parentItemCode,
+            parentItemName: parentItemName,
+            sourcePdf: sourcePdf
+          });
+        }
+
+        i = j - 1;
+      }
+    }
+  }
+
+  return items;
+}
+
 function extractReferenceValue(fullText, keyword) {
   const text = collapseWhitespace(fullText);
   const regex = new RegExp(`${keyword}[^0-9]{0,20}([0-9]+(?:\\.[0-9]+)?)`, 'gi');
@@ -262,55 +398,31 @@ function extractReferenceValue(fullText, keyword) {
   while ((match = regex.exec(text)) !== null) matches.push(parseFloat(match[1]));
   if (matches.length === 0) return null;
   if (matches.length === 1) return matches[0];
-  // Multiple occurrences of the keyword in the document (header/legend + BOM line, etc.) —
-  // taking the first one silently, as before, risks grabbing the wrong figure. Prefer the
-  // last occurrence, since BOM material lines with the actual quantity typically appear
-  // after any earlier mentions of the word (title blocks, notes) in these PDFs.
   return matches[matches.length - 1];
 }
 
-// Compares a calculated value against a PDF-printed reference value with a small tolerance
-// to absorb rounding differences. Returns 'match', 'mismatch', or 'none' (no reference found).
 function compareToReference(calculated, reference) {
   if (reference === null || reference === undefined || isNaN(reference)) return 'none';
-  // PDFs commonly print Primer/Thinner rounded to 3 decimal places, so a true value like
-  // 0.0066 can appear as 0.006. A 0.0005 floor is too tight to absorb that rounding on
-  // small quantities, so it's raised to 0.001 (still small relative to real weight values).
-  const tolerance = Math.max(0.001, Math.abs(reference) * 0.01); // 1% or 0.001, whichever is larger
+  const tolerance = Math.max(0.001, Math.abs(reference) * 0.01);
   return Math.abs(calculated - reference) <= tolerance ? 'match' : 'mismatch';
 }
 
-// Finds the BOM quantity printed next to the "SPRING STEEL FLAT" line — this is the raw-material
-// row in the BOM, and its quantity is expected to equal the calculated "5% Increase Weight".
-// The line typically reads like "SPRING STEEL FLAT  63.5 X 4.76 X 1165 MM  0.7048", so this
-// skips the keyword, skips the WxTxL dimension right after it, then takes the next decimal number.
 function extractSpringSteelFlatQty(fullText) {
   const text = collapseWhitespace(fullText);
   const idx = text.search(/spring\s*steel\s*flat/i);
   if (idx === -1) return null;
 
-  // Look within a window after the keyword — real BOM lines often have extra columns
-  // in between, e.g. "SPRING STEEL FLAT  SUP-9  63.5 X 4.76 X 1165 MM  RM  2.902  1,165.00  KGS"
-  // and the exact column order can shift depending on the PDF and even the pdf.js
-  // version doing the extraction, so position alone isn't reliable.
   const window = text.slice(idx, idx + 300);
 
   const xSign = `[xX*×✕✖⨯\\u00D7\\u03A7]`;
-  // pdf.js sometimes splits a decimal into separate text runs (e.g. "63.5" comes out
-  // as "63 . 5"), so the pattern has to tolerate whitespace around the decimal point —
-  // same fix already used in extractMaterialSection() above.
   const numPattern = `(?:\\d+(?:\\s*\\.\\s*\\d+)?)`;
   const dimRegex = new RegExp(`(${numPattern})\\s*${xSign}\\s*(${numPattern})\\s*${xSign}\\s*(${numPattern})(\\s*MM)?`, 'i');
   const dimMatch = window.match(dimRegex);
   if (!dimMatch) return null;
 
   const w = parseFloat(cleanNumber(dimMatch[1])), d = parseFloat(cleanNumber(dimMatch[2])), l = parseFloat(cleanNumber(dimMatch[3]));
-  const expectedWeight = w * d * l * STRUCTURAL_FACTOR * 1.05; // theoretical 5% Increase Weight for this leaf
+  const expectedWeight = w * d * l * STRUCTURAL_FACTOR * 1.05;
 
-  // Gather every plain decimal number after the dimension (skipping thousands-comma
-  // numbers like "1,165.00", which is almost always the Cut Length repeating the
-  // length dimension) and pick whichever is closest to the weight we'd expect. This
-  // sidesteps column-order differences entirely instead of assuming a fixed position.
   const afterDim = window.slice(dimMatch.index + dimMatch[0].length);
   const candidateRegex = /(?<![\d,])(\d+\.\d+)(?!\d*,)/g;
   let m, candidates = [];
@@ -338,6 +450,7 @@ async function processPDFs() {
   processBtn.disabled = true;
 
   let extractedLeaves = [];
+  let extractedNonLeafs = [];
 
   for (let f = 0; f < fileInput.files.length; f++) {
     const file = fileInput.files[f];
@@ -350,8 +463,8 @@ async function processPDFs() {
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items.map(item => item.str).join(' ');
-      fullText += pageText + ' ';
+      const pageText = textContent.items.map(item => item.str).join('\n');
+      fullText += pageText + '\n';
     }
 
     const materialSection = extractMaterialSection(fullText);
@@ -359,14 +472,19 @@ async function processPDFs() {
     const pdfPrimer = extractReferenceValue(fullText, 'PRIMER');
     const pdfThinner = extractReferenceValue(fullText, 'THINNER');
     const pdfBomQty = extractSpringSteelFlatQty(fullText);
+    const parentItemCode = extractParentItemCode(fullText, file.name);
+    const parentItemName = extractParentItemName(fullText);
 
     extractedLeaves.push({ fileName: file.name, leafNum, materialSection, rawText: fullText, pdfPrimer, pdfThinner, pdfBomQty });
+
+    const nonLeafs = extractNonLeafComponents(fullText, parentItemCode, parentItemName, file.name);
+    extractedNonLeafs.push(...nonLeafs);
   }
 
   extractedLeaves.sort((a, b) => a.leafNum - b.leafNum);
   extractedLeavesGlobal = extractedLeaves;
+  extractedNonLeafItemsGlobal = extractedNonLeafs;
 
-  // Feed straight into the calculator table below
   extractedLeaves.forEach((item, index) => {
     const leafLabel = getOrdinal(index + 1);
     const dims = extractDimensionsFromString(item.materialSection);
@@ -379,23 +497,52 @@ async function processPDFs() {
       <td class="p-2 border border-slate-200">${item.fileName}</td>
       <td class="p-2 border border-slate-200">${item.pdfPrimer !== null ? item.pdfPrimer : '—'} / ${item.pdfThinner !== null ? item.pdfThinner : '—'}</td>
       <td class="p-2 border border-slate-200">${item.pdfBomQty !== null ? item.pdfBomQty : '—'}</td>
-      <td class="p-2 border border-slate-200"><button type="button" class="px-2 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 rounded" onclick="showDebugText(${index})">View text</button></td>
+      <td class="p-2 border border-slate-200"><button type="button" class="px-2 py-1 text-[11px] bg-slate-100 hover:bg-slate-200 rounded cursor-pointer" onclick="showDebugText(${index})">View text</button></td>
     `;
     previewBody.appendChild(tr);
   });
 
+  renderNonLeafItems(extractedNonLeafs);
+
   processBtn.disabled = false;
 
   if (extractedLeaves.length > 0) {
-    statusDiv.innerText = `✅ Extracted and added ${extractedLeaves.length} leaf(s) to the calculation table below.`;
+    statusDiv.innerText = `✅ Extracted and added ${extractedLeaves.length} leaf(s) and ${extractedNonLeafs.length} non-leaf hardware component(s) to the tables below.`;
     previewWrap.classList.remove('hidden');
   } else {
     statusDiv.innerText = `No leaves were extracted.`;
   }
 }
 
+function renderNonLeafItems(items) {
+  const tbody = document.getElementById("nonLeafBody");
+  tbody.innerHTML = "";
+
+  if (!items || items.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="p-4 text-center text-slate-400 font-sans italic">No non-leaf hardware items extracted from BOM.</td></tr>`;
+    return;
+  }
+
+  items.forEach((item, idx) => {
+    const tr = document.createElement("tr");
+    tr.className = "hover:bg-slate-50 transition-colors";
+    tr.innerHTML = `
+      <td class="p-3 text-center text-slate-500 font-sans">${idx + 1}</td>
+      <td class="p-3 font-semibold text-slate-700">${item.code}</td>
+      <td class="p-3 font-semibold text-slate-800">${item.subItemName}</td>
+      <td class="p-3 text-slate-600">${item.units}</td>
+      <td class="p-3 text-right font-bold text-indigo-700">${item.bomQty}</td>
+      <td class="p-3 text-right text-slate-700">${item.packCapacity}</td>
+      <td class="p-3 text-indigo-900 font-bold font-mono text-xs">${item.parentItemCode}</td>
+      <td class="p-3 text-slate-800 font-semibold font-sans text-xs">${item.parentItemName}</td>
+      <td class="p-3 text-slate-600 font-sans text-xs">${item.sourcePdf || '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
 /* ============================================================
-   SECTION B — CALCULATOR (from calculator.html)
+   SECTION B — CALCULATOR
    ============================================================ */
 
 const STRUCTURAL_FACTOR = 0.00000785;
@@ -415,6 +562,9 @@ function clearAllRows() {
   document.getElementById("pdfPreviewWrap").classList.add("hidden");
   document.getElementById("pdfStatus").innerText = "";
   document.getElementById("pdfFiles").value = "";
+  
+  extractedNonLeafItemsGlobal = [];
+  renderNonLeafItems([]);
   runCalculations();
 }
 
@@ -641,19 +791,16 @@ function runCalculations() {
 
     row.querySelector(".out-weight-raw").value = baseWeight.toFixed(4);
 
-    // Compare calculated values against PDF-printed reference values, if present
     const pdfPrimerRef = row.dataset.pdfPrimer !== undefined ? parseFloat(row.dataset.pdfPrimer) : null;
     const pdfThinnerRef = row.dataset.pdfThinner !== undefined ? parseFloat(row.dataset.pdfThinner) : null;
     const pdfBomQtyRef = row.dataset.pdfBomQty !== undefined ? parseFloat(row.dataset.pdfBomQty) : null;
     const primerStatus = compareToReference(primerVolume, pdfPrimerRef);
     const thinnerStatus = compareToReference(thinnerVolume, pdfThinnerRef);
-    const bomQtyStatus = compareToReference(incrementalWeight, pdfBomQtyRef); // vs "5% Increase Weight"
+    const bomQtyStatus = compareToReference(incrementalWeight, pdfBomQtyRef);
 
     const matchCell = row.querySelector(".match-status");
     row.classList.remove("bg-emerald-50", "bg-rose-50", "ring-2", "ring-emerald-400", "ring-rose-400");
 
-    // Highlight only the specific cell(s) that actually mismatch, so it's obvious
-    // *which* value is wrong (weight vs primer vs thinner), not just that "something" is off.
     const cellChecks = [
       { status: bomQtyStatus, calcCell: row.querySelector(".out-increase"), refCell: row.querySelector(".pdf-bomqty-val"), calc: incrementalWeight, ref: pdfBomQtyRef, label: "5% Increase Weight" },
       { status: primerStatus, calcCell: row.querySelector(".out-primer"), refCell: row.querySelector(".pdf-primer-val"), calc: primerVolume, ref: pdfPrimerRef, label: "Primer" },
@@ -716,12 +863,16 @@ function runCalculations() {
   document.getElementById("globalThinnerG").innerText = globalThinnerGQty.toFixed(4);
 }
 
-function exportToExcelFormat() {
-  const rows = document.querySelectorAll("#tableBody tr");
+/* ALL-IN-ONE EXPORT FUNCTION */
+function exportAllToExcel() {
+  const workbook = XLSX.utils.book_new();
 
-  let dataset = [[
-    "LEAVES", "RAW ERP STRING", "WIDTH", "DIA", "LENGTH", "NORMAL WEIGHT", "5% INCREASE WEIGHT", "40/ PRIMER", "20/ THINNER", "PDF PRIMER", "PDF THINNER", "PDF BOM QTY (SPRING STEEL FLAT)", "MATCH"
-  ]];
+  // 1. Leaf Coating Calculation Sheet
+  const rows = document.querySelectorAll("#tableBody tr");
+  let leafDataset = [
+    ["LEAF SPRING COATING CALCULATION SHEET"],
+    ["LEAVES", "RAW ERP STRING", "WIDTH (MM)", "DIA/THICK (MM)", "LENGTH (MM)", "NORMAL WEIGHT", "5% INCREASE WEIGHT", "40/ PRIMER", "20/ THINNER", "PDF PRIMER", "PDF THINNER", "PDF BOM QTY (SPRING STEEL FLAT)", "MATCH"]
+  ];
 
   rows.forEach((row) => {
     const label = row.querySelector(".row-label").innerText;
@@ -739,12 +890,12 @@ function exportToExcelFormat() {
     const pdfBomQtyText = row.querySelector(".pdf-bomqty-val").innerText;
     const matchText = row.querySelector(".match-status").innerText.trim();
 
-    dataset.push([label, pasteStr, w, d, l, weight, increase, primer, thinner, pdfPrimerText, pdfThinnerText, pdfBomQtyText, matchText]);
+    leafDataset.push([label, pasteStr, w, d, l, weight, increase, primer, thinner, pdfPrimerText, pdfThinnerText, pdfBomQtyText, matchText]);
   });
 
   const rawTotalWeight = parseFloat(document.getElementById("calcTable").getAttribute("data-raw-weight-total")) || 0;
 
-  dataset.push([
+  leafDataset.push([
     "TOTALS", "",
     parseFloat(document.getElementById("totalWidth").innerText),
     parseFloat(document.getElementById("totalDia").innerText),
@@ -755,23 +906,48 @@ function exportToExcelFormat() {
     parseFloat(document.getElementById("totalThinner").innerText)
   ]);
 
-  dataset.push([]);
-
+  leafDataset.push([]);
   const semiGlossTotal = parseFloat(document.getElementById("globalSemiGlossy").innerText);
   const thinnerGTotal = parseFloat(document.getElementById("globalThinnerG").innerText);
 
-  dataset.push(["GLOBAL METRICS FORMULA SUMMARY"]);
-  dataset.push(["SEMI GLOSSY QTY", semiGlossTotal]);
-  dataset.push(["THINNER QTY (G)", thinnerGTotal]);
+  leafDataset.push(["GLOBAL METRICS FORMULA SUMMARY"]);
+  leafDataset.push(["SEMI GLOSSY REQUIREMENTS", semiGlossTotal]);
+  leafDataset.push(["THINNER QUANTITY (GLOSSY)", thinnerGTotal]);
 
-  const worksheet = XLSX.utils.aoa_to_sheet(dataset);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Production Summary");
+  const leafWorksheet = XLSX.utils.aoa_to_sheet(leafDataset);
+  XLSX.utils.book_append_sheet(workbook, leafWorksheet, "Coating Calculations");
 
-  XLSX.writeFile(workbook, "ERP_Leaf_Spring_Calculations.xlsx");
+  // 2. Non-Leaf Hardware Components Sheet
+  let nonLeafDataset = [
+    ["NON-LEAF HARDWARE COMPONENTS (EXTRACTED FROM BOM)"],
+    ["#", "CODE", "SUBITEMNAME", "UNITS", "BOMQTY", "PACK CAPACITY", "ITEM CODE", "ITEM NAME", "SOURCE PDF"]
+  ];
+
+  if (extractedNonLeafItemsGlobal && extractedNonLeafItemsGlobal.length > 0) {
+    extractedNonLeafItemsGlobal.forEach((item, idx) => {
+      nonLeafDataset.push([
+        idx + 1,
+        item.code,
+        item.subItemName,
+        item.units,
+        item.bomQty,
+        item.packCapacity,
+        item.parentItemCode,
+        item.parentItemName,
+        item.sourcePdf || '—'
+      ]);
+    });
+  } else {
+    nonLeafDataset.push(["—", "—", "No non-leaf hardware items extracted", "—", "—", "—", "—", "—", "—"]);
+  }
+
+  const nonLeafWorksheet = XLSX.utils.aoa_to_sheet(nonLeafDataset);
+  XLSX.utils.book_append_sheet(workbook, nonLeafWorksheet, "Hardware Components");
+
+  // Write and Save Complete File
+  XLSX.writeFile(workbook, "Complete_Leaf_Spring_Production_BOM.xlsx");
 }
 
-// No demo/auto-run — table starts empty; populate via PDF upload, paste, or Excel import.
 runCalculations();
 </script>
 </body>
